@@ -147,8 +147,9 @@ img { max-width: 100%; display: block; }
 }
 .hero-desc {
   font-size: 1.08em; color: var(--text2);
-  line-height: 1.7; max-width: 560px;
+  line-height: 1.7; max-width: 620px;
   margin: 0 auto 36px;
+  white-space: nowrap;
 }
 .hero-links { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 .btn-primary, .btn-secondary {
