@@ -11,13 +11,16 @@
 <!-- 导航 -->
 <nav class="nav">
   <div class="nav-inner">
-    <a href="#" class="logo">
-      <span class="logo-bracket">{</span>mmmmh633<span class="logo-bracket">}</span>
-    </a>
+    <a href="#" class="logo">🏠 Home</a>
     <div class="nav-links">
-      <a href="blog.html">博客</a>
+      <a href="#latest">博客</a>
       <a href="#projects">项目</a>
-      <a href="https://github.com/mmmmh633" target="_blank">GitHub</a>
+      <a href="https://github.com/mmmmh633" target="_blank">
+        <span class="nav-icon">⌘</span>GitHub
+      </a>
+      <button class="nav-share" id="shareBtn" title="分享">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      </button>
     </div>
   </div>
 </nav>
@@ -33,7 +36,7 @@
     <h1>在<span class="gradient-text">仿真与AI</span>的交汇处构建</h1>
     <p class="hero-desc">工程计算与机器学习的融合。物理信息神经网络、数字孪生、高性能科学计算。</p>
     <div class="hero-links">
-      <a href="blog.html" class="btn-primary">阅读博客</a>
+      <a href="#latest" class="btn-primary">阅读博客</a>
       <a href="#projects" class="btn-secondary">查看项目</a>
     </div>
   </div>
@@ -45,7 +48,6 @@
     <div class="section-header">
       <span class="section-tag">作品</span>
       <h2>项目</h2>
-      <p>开源与研究项目。</p>
     </div>
     <div class="projects-grid">
       <a href="https://github.com/mmmmh633/PaddleScience" class="project-card" target="_blank">
@@ -62,6 +64,9 @@
         <p>项目将在此处展示。</p>
       </div>
     </div>
+    <div class="view-more">
+      <a href="https://github.com/mmmmh633" target="_blank" class="btn-secondary">查看更多 →</a>
+    </div>
   </div>
 </section>
 
@@ -70,7 +75,7 @@
   <div class="container">
     <div class="section-header">
       <span class="section-tag">文章</span>
-      <h2>最新博客</h2>
+      <h2>博客</h2>
     </div>
     <div class="blog-grid" id="homeBlogGrid"></div>
     <div class="view-more">
@@ -79,29 +84,14 @@
   </div>
 </section>
 
-<!-- 页脚（含关于 + 联系信息） -->
-<footer class="footer-full">
-  <div class="footer-grid">
-    <div class="footer-col">
-      <h4>关于</h4>
-      <p>站在仿真与AI前沿的工程师。研究方向包括物理信息神经网络、降阶模型与数字孪生系统。</p>
-    </div>
-    <div class="footer-col">
-      <h4>技术栈</h4>
-      <p>Python · PaddlePaddle · PyTorch · ANSYS · ParaView</p>
-    </div>
-    <div class="footer-col">
-      <h4>联系</h4>
-      <div class="footer-links">
-        <a href="https://github.com/mmmmh633" target="_blank">GitHub</a>
-      </div>
-    </div>
-  </div>
-  <div class="footer-bottom">
-    <p>&copy; 2026 mmmmh633</p>
+<!-- 页脚 -->
+<footer>
+  <div class="container">
+    <p>&copy; 2026 mmmmh633 &nbsp;·&nbsp; 仿真与AI交叉领域探索者 &nbsp;·&nbsp; <a href="https://github.com/mmmmh633" target="_blank">GitHub</a></p>
   </div>
 </footer>
 
+<script src="blog-posts-data.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -11,13 +11,16 @@
 <!-- 导航 -->
 <nav class="nav">
   <div class="nav-inner">
-    <a href="index.html" class="logo">
-      <span class="logo-bracket">{</span>mmmmh633<span class="logo-bracket">}</span>
-    </a>
+    <a href="index.html" class="logo">🏠 Home</a>
     <div class="nav-links">
       <a href="blog.html" class="active">博客</a>
       <a href="index.html#projects">项目</a>
-      <a href="https://github.com/mmmmh633" target="_blank">GitHub</a>
+      <a href="https://github.com/mmmmh633" target="_blank">
+        <span class="nav-icon">⌘</span>GitHub
+      </a>
+      <button class="nav-share" id="shareBtn" title="分享">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      </button>
     </div>
   </div>
 </nav>
@@ -51,10 +54,11 @@
 <!-- 页脚 -->
 <footer>
   <div class="container">
-    <p>&copy; 2026 mmmmh633</p>
+    <p>&copy; 2026 mmmmh633 &nbsp;·&nbsp; <a href="index.html">Home</a> &nbsp;·&nbsp; <a href="https://github.com/mmmmh633" target="_blank">GitHub</a></p>
   </div>
 </footer>
 
+<script src="blog-posts-data.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
