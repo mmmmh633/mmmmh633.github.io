@@ -1,165 +1,230 @@
 /* =============================================
-   Blog Posts Data
+   Blog Posts Data (from ShareFiles)
    ============================================= */
 const blogPosts = [
   {
-    id: 'pinn-intro',
-    title: 'PINN：物理信息神经网络入门',
-    date: '2026-06-20',
-    category: '技术笔记',
+    id: 'paddlescience-survey',
+    title: 'PaddleScience 调研报告',
+    date: '2026-07-06',
+    category: '调研',
+    excerpt: '国产深度学习科学计算框架的全景调研：架构设计、核心能力、框架对比与选型建议。',
     content: `
-      <p>物理信息神经网络（Physics-Informed Neural Networks, PINN）将物理定律以偏微分方程残差的形式嵌入神经网络损失函数，使模型在数据稀疏时仍能收敛到符合物理约束的解。</p>
+      <p>PaddleScience 是百度飞桨生态下的科学计算套件，利用深度神经网络和自动微分机制解决 PDE/ODE 问题。采用 Apache 2.0 协议，是目前国内最完整的 AI4S 开源框架。</p>
 
-      <h2>核心思想</h2>
-      <p>传统神经网络仅依赖数据驱动，而 PINN 在损失函数中额外引入<strong>物理残差项</strong>：</p>
-      <pre><code>Loss = Loss_data + λ * Loss_pde</code></pre>
-      <p>其中 <code>Loss_pde</code> 是偏微分方程在配点上的残差。通过自动微分计算各阶导数，无需手动推导。</p>
+      <h2>三种求解范式</h2>
+      <table>
+        <tr><th>范式</th><th>说明</th><th>适用场景</th></tr>
+        <tr><td>物理机理驱动</td><td>PDE 作为损失函数约束，无监督/半监督</td><td>边界条件明确，监督数据稀缺</td></tr>
+        <tr><td>数据驱动</td><td>纯监督学习，从数据中学习映射</td><td>有大量模拟/实验数据</td></tr>
+        <tr><td>数理融合</td><td>同时使用 PDE 约束 + 数据约束</td><td>部分物理规律已知，部分数据可用</td></tr>
+      </table>
 
-      <h3>正向问题</h3>
-      <p>已知边界条件和物理参数，求解场分布。PINN 直接将坐标作为输入，场量作为输出，通过 PDE 残差约束训练。</p>
-
-      <h3>逆向问题</h3>
-      <p>已知部分观测数据，反推物理参数。PINN 将未知参数设为可训练变量，与网络权重同步优化。</p>
-
-      <h2>技术要点</h2>
+      <h2>核心模块架构</h2>
+      <p>PaddleScience 将求解流程拆分为 12+ 个核心模块，每个模块职责单一、可替换：</p>
       <ul>
-        <li><strong>自动微分</strong>：框架内置 AD，精确计算梯度，无需数值差分</li>
-        <li><strong>配点采样</strong>：在域内和边界上采样配点，残差在此处计算</li>
-        <li><strong>多任务优化</strong>：数据项与 PDE 项梯度尺度不均衡，需动态调节权重</li>
-        <li><strong>硬约束 vs 软约束</strong>：可将边界条件硬编码进网络结构，提升收敛速度</li>
+        <li><strong>Arch</strong>：神经网络模型（MLP、Transformer、GNN 等）</li>
+        <li><strong>Equation</strong>：基于 SymPy 的符号方程定义，支持联立方程组</li>
+        <li><strong>Constraint</strong>：统一抽象——将 PDE、边界、监督约束统一为"约束"，使机理驱动和数据驱动共享训练流程</li>
+        <li><strong>Geometry</strong>：几何采样，支持 STL 复杂几何加载与布尔运算</li>
+        <li><strong>Solver</strong>：全局调度器，负责训练、评估、可视化的流程编排</li>
+        <li><strong>Loss</strong>：多种损失函数 + 多任务学习权重策略（NTK、GradNorm）</li>
+        <li><strong>Optimizer</strong>：优化器 + 学习率调度器</li>
       </ul>
 
-      <h2>常用框架</h2>
-      <p>目前主流工具有 PaddleScience、NVIDIA Modulus（原 SimNet）、DeepXDE 等。PaddleScience 基于 PaddlePaddle，对国产硬件适配较好。</p>
+      <h2>框架对比</h2>
+      <table>
+        <tr><th>维度</th><th>PaddleScience</th><th>NVIDIA Modulus</th><th>DeepXDE</th></tr>
+        <tr><td>底层框架</td><td>PaddlePaddle</td><td>PyTorch</td><td>TF/PyTorch/JAX/Paddle</td></tr>
+        <tr><td>PINN 支持</td><td>✅ 完善</td><td>✅ 完善</td><td>✅ 核心功能</td></tr>
+        <tr><td>符号方程</td><td>✅ SymPy 原生</td><td>⚠️ 需手写</td><td>⚠️ 需手写</td></tr>
+        <tr><td>几何处理</td><td>✅ STL + SymPy</td><td>✅ CSG + STL</td><td>⚠️ 简单几何</td></tr>
+        <tr><td>多硬件</td><td>CUDA/XPU(昆仑)/CPU</td><td>CUDA only</td><td>CPU/CUDA</td></tr>
+        <tr><td>中文文档</td><td>✅ 完善</td><td>⚠️ 英文为主</td><td>⚠️ 英文为主</td></tr>
+        <tr><td>工业部署</td><td>Paddle Inference/Serving</td><td>TensorRT/Triton</td><td>学术为主</td></tr>
+      </table>
 
-      <blockquote>PINN 的优势在于小数据与强物理约束场景。当数据充足时，纯数据驱动方法通常更高效。</blockquote>
+      <h2>技术亮点</h2>
+      <ul>
+        <li><strong>Constraint 统一抽象</strong>：物理约束和数据约束共用训练流程，数理融合场景极方便</li>
+        <li><strong>实验工程化</strong>：Hydra 配置管理、实验追踪、并行超参搜索，适合大规模消融实验</li>
+        <li><strong>国产化适配</strong>：昆仑芯 XPU 支持，适合国产硬件环境</li>
+        <li><strong>案例丰富</strong>：覆盖数学、流体、结构、传热、气象、材料、化学等 60+ 案例</li>
+      </ul>
+
+      <h2>选型建议</h2>
+      <p>如果团队技术栈是 PaddlePaddle 或愿意切换，PaddleScience 是国产最优选。如果已有 PyTorch 沉淀，Modulus/PhysicsNeMo 更顺滑。建议用 PaddleScience 跑一个 Allen-Cahn 或传热案例，直观感受开发效率后再做决策。</p>
+
+      <blockquote>PaddleScience 的核心取舍：国产生态亲和力 vs PyTorch 生态兼容性。适合有国产化需求、中文支持需求的团队。</blockquote>
     `
   },
   {
-    id: 'paddlescience-guide',
-    title: 'PaddleScience 实践指南',
+    id: 'framework-survey',
+    title: '物理信息机器学习框架全景调研',
+    date: '2026-07-06',
+    category: '调研',
+    excerpt: 'DeepXDE、PaddleScience、NVIDIA PhysicsNeMo 三大框架深度对比，以及 DMD/POD/DEIM 降阶方法梳理。',
+    content: `
+      <p>物理信息机器学习的核心路线：将物理规律（PDE、边界条件、守恒律）嵌入神经网络训练过程，使模型在数据稀缺时仍保持物理一致性。本文对比三大主流框架，并梳理降阶加速方法。</p>
+
+      <h2>主流范式</h2>
+      <ul>
+        <li><strong>物理信息驱动的 PINN</strong>：将 PDE 残差作为损失函数，无需标注数据即可求解</li>
+        <li><strong>数据驱动的神经算子</strong>：从仿真数据中学习 PDE 算子映射（DeepONet、FNO）</li>
+        <li><strong>数理融合</strong>：PINN + 数据监督的混合策略</li>
+        <li><strong>降维加速</strong>：POD/DMD 提取低维模态 + DEIM 加速非线性项</li>
+      </ul>
+
+      <h2>三大框架对比</h2>
+      <table>
+        <tr><th>维度</th><th>DeepXDE</th><th>PaddleScience</th><th>PhysicsNeMo</th></tr>
+        <tr><td>开发方</td><td>布朗大学 Lu Lu 课题组</td><td>百度</td><td>NVIDIA</td></tr>
+        <tr><td>底层框架</td><td>TF/PyTorch/JAX/Paddle</td><td>PaddlePaddle</td><td>PyTorch</td></tr>
+        <tr><td>核心能力</td><td>PINN + DeepONet</td><td>PINN + 数据驱动 + 算子</td><td>PINN + 算子 + GNN + 扩散</td></tr>
+        <tr><td>3D 几何</td><td>⚠️ 基础支持</td><td>✅ pymesh/open3d</td><td>✅ 点云/mesh 管道</td></tr>
+        <tr><td>分布式训练</td><td>⚠️ 基础支持</td><td>⚠️ 单机为主</td><td>✅ 多GPU/多节点</td></tr>
+        <tr><td>预训练模型</td><td>❌</td><td>❌</td><td>✅ NGC 模型库</td></tr>
+        <tr><td>生态定位</td><td>学术研究</td><td>国产框架、工业验证</td><td>工业级数字孪生</td></tr>
+      </table>
+
+      <h2>DeepXDE 要点</h2>
+      <p>布朗大学 Lu Lu（陆路）课题组开发，是首个提出 DeepONet 的团队。最大特色是多后端设计——通过环境变量切换 TensorFlow/PyTorch/JAX/Paddle 后端，对学术研究非常灵活。</p>
+      <p>功能相对简洁，对数据驱动的大模型缺乏支持。适合 PINN 论文复现和快速原型验证。</p>
+
+      <h2>PaddleScience 要点</h2>
+      <p>通过 <code>arch</code>、<code>constraint</code>、<code>equation</code> 等模块简化了网络构造和 PDE 定义。支持三种求解范式：无监督 PINN、数据驱动监督学习、神经算子学习。3D 几何处理能力突出，依赖 open3d + pyvista + pysdf + pymesh 技术栈。</p>
+
+      <h2>PhysicsNeMo 要点</h2>
+      <p>NVIDIA 开源的大规模物理 AI 框架（前身 Modulus），基于 PyTorch。核心优势：原生 GPU 优化、多 GPU/多节点分布式训练、NGC 预训练模型库。已被 Ansys、SimScale、台积电、富士康等企业采用。适合工业级数字孪生产品化方向。</p>
+
+      <h2>降阶加速方法</h2>
+      <table>
+        <tr><th>方法</th><th>本质</th><th>典型应用</th></tr>
+        <tr><td>POD</td><td>纯空间统计降维，按能量排序提取模态</td><td>ROM 基函数构建</td></tr>
+        <tr><td>DMD</td><td>时空耦合动力学分解，单频模态+增长/衰减率</td><td>流场稳定性分析、短期预测</td></tr>
+        <tr><td>DEIM</td><td>非线性项插值加速，挑选关键插值点</td><td>配合 POD/DMD 加速 ROM</td></tr>
+        <tr><td>NARX</td><td>时序神经网络预测（历史输出+外部输入）</td><td>工业传感器单点预报</td></tr>
+      </table>
+
+      <h2>选型路线图</h2>
+      <ul>
+        <li>学术研究、PINN 探索 → <strong>DeepXDE</strong>（轻量、多后端、论文复现友好）</li>
+        <li>国内部署、复杂 3D 几何 + PINN → <strong>PaddleScience</strong>（国产生态、3D 能力强）</li>
+        <li>工业级数字孪生、大规模部署 → <strong>PhysicsNeMo</strong>（GPU 加速、分布式）</li>
+        <li>瞬态仿真加速 → <strong>POD/DMD + DEIM</strong>（经典 ROM 路线，可与上述框架结合）</li>
+      </ul>
+    `
+  },
+  {
+    id: 'dmd-pod-deim',
+    title: 'DMD、POD 与 DEIM 降阶方法详解',
     date: '2026-06-25',
     category: '技术笔记',
+    excerpt: '动态模态分解、本征正交分解与离散经验插值法的原理对比、适用场景与工程应用指南。',
     content: `
-      <p>PaddleScience 是百度基于 PaddlePaddle 推出的 AI for Science 工具包，面向流体力学、固体力学、电磁学等领域的仿真加速。</p>
+      <p>DMD、POD、DEIM 是仿真降阶加速的三大核心技术。本文从直观原理出发，对比三者差异，给出工程选型建议。</p>
 
-      <h2>架构概览</h2>
-      <p>核心模块包括：几何定义（Geometry）、方程约束（Equation）、神经网络（Model）、优化器与调度器，以及后处理与可视化。各模块通过配置文件串联，降低使用门槛。</p>
+      <h2>POD：本征正交分解</h2>
+      <p><strong>核心思想</strong>：与 PCA 类似，对全场快照数据做 SVD 分解，按能量大小排序提取空间模态。少量模态即可保留绝大部分能量，常用作 ROM 的基函数。</p>
 
-      <h2>几何与网格</h2>
-      <p>支持矩形、圆形、L 形等基础几何体，以及布尔组合。内部自动生成采样点，也可自定义采样策略。</p>
-      <pre><code>from ppsci.geometry import Rectangle, PointCloud
-geom = Rectangle((-1,-1), (1,1))</code></pre>
-
-      <h2>方程定义</h2>
-      <p>通过符号化或继承基类定义 PDE。以内置 Navier-Stokes 为例，框架自动处理无量纲化和导数计算。</p>
-
-      <h3>自定义方程</h3>
-      <p>继承 <code>equation.PDE</code> 基类，重写 <code>pde</code> 方法，返回各残差项的字典。自动微分计算所有必要偏导数。</p>
-
-      <h2>训练与调优</h2>
+      <h3>特点</h3>
       <ul>
-        <li>推荐使用 Adam + L-BFGS 两阶段训练策略</li>
-        <li>损失权重可动态调整（如 NTK、GradNorm）</li>
-        <li>学习率预热 + 余弦退火通常表现稳定</li>
+        <li>模态正交，数学性质稳定，数值表现好</li>
+        <li>纯空间统计——模态不含时间动力学信息</li>
+        <li>单个模态含多频耦合，物理解释弱</li>
+        <li>适合：数据压缩、ROM 基函数构建</li>
       </ul>
 
-      <h2>与 PhysicsNemo 的对比</h2>
-      <p>PhysicsNemo（NVIDIA Modulus）生态更成熟，支持多 GPU 并行和符号式方程定义。PaddleScience 的优势在于国产化适配和中文社区支持。</p>
-    `
-  },
-  {
-    id: 'transient-dt',
-    title: '数字孪生中的瞬态分析方法',
-    date: '2026-07-02',
-    category: '工程实践',
-    content: `
-      <p>数字孪生（Digital Twin）要求虚拟模型与物理实体实时同步。对于动态系统，这意味着需要高效的瞬态分析方法来捕获时变行为。</p>
+      <h2>DMD：动态模态分解</h2>
+      <p><strong>核心思想</strong>：假设系统近似线性动力学 x<sub>k+1</sub> = A·x<sub>k</sub>，对时序全场数据做特征分解，提取空间模态 + 对应频率 + 增长/衰减率。</p>
 
-      <h2>瞬态 vs 稳态</h2>
-      <p>稳态分析求解系统平衡状态，计算量小但对动态过程无能为力。瞬态分析以时间步进方式求解，能捕获启动、关停、突变等关键过程，但计算成本成倍增加。</p>
-
-      <h2>加速策略</h2>
-      <h3>降阶模型（ROM）</h3>
-      <p>通过 POD、DMD 等方法将高维系统投影到低维子空间，保留主要动力学特征。配合 Galerkin 投影，可将求解时间从小时级压缩到秒级。</p>
-
-      <h3>代理模型</h3>
-      <p>用神经网络学习「输入参数 → 瞬态响应」的映射，替代传统求解器。PINN 和 DeepONet 在此方向表现突出。</p>
-
-      <h3>自适应时间步长</h3>
-      <p>根据局部误差估计动态调整步长，在变化剧烈处加密、平稳处放宽，平衡精度与效率。</p>
-
-      <h2>实际挑战</h2>
+      <h3>特点</h3>
       <ul>
-        <li><strong>多尺度耦合</strong>：不同物理场的时间尺度差异大（如热 vs 结构），需多速率积分策略</li>
-        <li><strong>实时性要求</strong>：数字孪生要求延迟在毫秒级，传统求解器难以满足</li>
-        <li><strong>不确定性量化</strong>：传感器噪声和模型误差的传播需要在瞬态框架下分析</li>
+        <li>每个模态对应单一频率，物理可解释性强</li>
+        <li>自带增长/衰减系数，可做短期预测</li>
+        <li>能判断涡脱落频率、流动稳定性等物理特征</li>
+        <li>局强非线性系统精度下降</li>
+        <li>适合：流场稳定性分析、全场云图短期预报</li>
       </ul>
 
-      <blockquote>瞬态分析是数字孪生从「事后回放」走向「实时同步」的核心技术瓶颈。</blockquote>
-    `
-  },
-  {
-    id: 'gpu-simulation',
-    title: 'GPU 加速科学计算实践',
-    date: '2026-07-05',
-    category: '工程实践',
-    content: `
-      <p>科学计算从 CPU 向 GPU 迁移是大势所趋。本文记录 GPU 加速在仿真场景中的关键技术和踩坑经验。</p>
+      <h2>POD vs DMD 直观对比</h2>
+      <table>
+        <tr><th>维度</th><th>POD</th><th>DMD</th></tr>
+        <tr><td>本质</td><td>空间统计降维</td><td>时空耦合动力学分解</td></tr>
+        <tr><td>输入</td><td>全场快照数据</td><td>时序全场数据</td></tr>
+        <tr><td>模态含义</td><td>能量最优，含多频耦合</td><td>单频模态，物理可解释</td></tr>
+        <tr><td>时间信息</td><td>无</td><td>频率 + 增长/衰减率</td></tr>
+        <tr><td>数学基础</td><td>SVD</td><td>线性算子特征分解</td></tr>
+        <tr><td>典型应用</td><td>压缩、ROM 基函数</td><td>稳定性分析、短期预测</td></tr>
+      </table>
 
-      <h2>硬件选型</h2>
-      <p>双精度（FP64）性能是科学计算的核心指标。消费级 GPU（如 RTX 系列）双精度被大幅阉割，推荐使用 Tesla/Quadro 系列或云 GPU 实例。</p>
+      <h2>DEIM：离散经验插值法</h2>
+      <p><strong>定位</strong>：DEIM 不是独立建模算法，是 POD/DMD 降阶框架的配套加速工具。专门解决"降维后非线性项计算依然很慢"的痛点。</p>
 
-      <h2>并行模式</h2>
-      <h3>数据并行</h3>
-      <p>多 GPU 各持完整模型副本，并行处理不同数据批次。适合参数扫描和蒙特卡洛类任务，实现简单但对大模型不友好。</p>
+      <h3>工作原理</h3>
+      <ol>
+        <li>从海量网格中自动挑选少数关键插值点</li>
+        <li>只用这些关键点的数值插值还原全场非线性项</li>
+        <li>将上百万网格计算量压缩到几十点，加速 10~100 倍</li>
+      </ol>
 
-      <h3>模型并行</h3>
-      <p>模型拆分到多 GPU，适合超大网络。在 PINN 场景中，可按物理区域划分子网络，各自负责不同子域。</p>
+      <blockquote>类比：画人像不用铺满像素，只捕捉五官关键点位，插值还原整张脸。</blockquote>
 
-      <h2>CUDA 编程要点</h2>
+      <h3>特点</h3>
       <ul>
-        <li>合并内存访问：确保相邻线程访问相邻地址</li>
-        <li>共享内存利用：减少全局内存读写，适合模板计算类 kernel</li>
-        <li>异步传输：使用 CUDA Stream 重叠计算与数据传输</li>
+        <li>✅ 极大加速 CAE/流体降阶模型在线计算</li>
+        <li>✅ 保证插值精度</li>
+        <li>❌ 依附 POD/DMD 存在，不能单独建模预测</li>
+        <li>❌ 关键插值点固定，工况偏移后精度下降</li>
       </ul>
 
-      <h2>框架选择</h2>
-      <p>PyTorch/PaddlePaddle 提供了良好的 GPU 抽象。对于自定义算子，推荐用 CUDA C++ 编写扩展，通过 pybind11 或 torch 的 C++ API 接入。</p>
+      <h2>工程应用建议</h2>
+      <table>
+        <tr><th>场景</th><th>推荐方法</th></tr>
+        <tr><td>全场云图仿真加速</td><td>有限元生成数据 → DMD 提取动态模态 → DEIM 加速非线性项</td></tr>
+        <tr><td>传感器时序预测</td><td>NARX 黑箱模型</td></tr>
+        <tr><td>复杂多物理场数字孪生</td><td>POD/DMD 降阶 + DEIM 加速 + 神经网络混合模型</td></tr>
+      </table>
 
-      <p>在数字孪生场景中，GPU 加速使实时瞬态仿真成为可能。配合降阶模型，可将传统需要数小时的仿真压缩到亚秒级。</p>
-    `
-  },
-  {
-    id: 'mechanics-to-ai',
-    title: '从力学到 AI：一个工程师的转型之路',
-    date: '2026-07-08',
-    category: '随笔',
-    content: `
-      <p>本科四年 + 硕士三年，我在力学系度过了七年。如今站在仿真与 AI 的交汇处，回看这段路径，想写下来给同样在转型中的人一些参考。</p>
-
-      <h2>力学给了我什么</h2>
-      <p>力学的核心训练是<strong>建模思维</strong>：把一个物理现象抽象成偏微分方程，识别主导项，做量纲分析，判断边界条件。这套思维在 AI 领域同样适用——理解问题结构比调参更重要。</p>
-
-      <p>计算力学让我接触了数值方法：有限元、有限差分、谱方法。这些离散化技术是 PINN 的对比基准，不理解传统方法就无法判断新方法的优劣。</p>
-
-      <h2>为什么要转向 AI</h2>
-      <p>传统仿真有两个瓶颈：一是速度——复杂模型的瞬态分析动辄数小时；二是泛化——每次改参数都要重新求解。AI 方法（特别是 PINN 和代理模型）正好能缓解这两个问题。</p>
-
-      <h2>学习路径</h2>
-      <ul>
-        <li><strong>第一阶段</strong>：补 Python 和基本 ML（3 个月）。吴恩达课程 + 李沐《动手学深度学习》</li>
-        <li><strong>第二阶段</strong>：深入 PINN 文献（2 个月）。从 Raissi 的原始论文开始，跟踪到最新进展</li>
-        <li><strong>第三阶段</strong>：动手复现（3 个月）。用 PaddleScience 复现基准案例，理解工程细节</li>
-      </ul>
-
-      <h2>心得</h2>
-      <p>最大的体会是：<strong>不要丢掉工程背景</strong>。纯 AI 出身的人懂网络结构但不懂物理；纯力学出身的人懂方程但不懂优化。站在中间是最稀缺的位置。</p>
-
-      <blockquote>转型不是抛弃过去，而是给已有的知识体系装上新的引擎。</blockquote>
+      <h2>标准流程</h2>
+      <p>有限元仿真生成全场数据 → DMD 提取动态模态构建降阶模型 → DEIM 加速非线性求解 → 得到快速仿真模型。若仿真难以建模、只有传感器实测时序数据，则直接用 NARX 搭建黑箱预测模型。</p>
     `
   }
 ];
+
+/* =============================================
+   Homepage Blog Cards
+   ============================================= */
+
+function renderHomeBlogCards() {
+  const grid = document.getElementById('homeBlogGrid');
+  if (!grid) return;
+
+  const latest = blogPosts.slice(0, 3);
+  let html = '';
+  latest.forEach(post => {
+    html += `
+      <a href="blog.html#post-${post.id}" class="blog-card" data-id="${post.id}">
+        <div class="blog-card-meta">
+          <span class="blog-card-date">${post.date}</span>
+          <span class="blog-card-cat">${post.category}</span>
+        </div>
+        <h3>${post.title}</h3>
+        <p>${post.excerpt}</p>
+      </a>`;
+  });
+  grid.innerHTML = html;
+
+  // card click → navigate to blog page with post pre-selected
+  grid.querySelectorAll('.blog-card').forEach(card => {
+    card.addEventListener('click', function(e) {
+      const id = this.dataset.id;
+      if (id) {
+        e.preventDefault();
+        window.location.href = `blog.html#post-${id}`;
+      }
+    });
+  });
+}
 
 /* =============================================
    Blog Page Functions
@@ -169,7 +234,6 @@ function buildFileTree() {
   const nav = document.getElementById('fileTreeNav');
   if (!nav) return;
 
-  // group posts by category
   const cats = {};
   blogPosts.forEach(p => {
     if (!cats[p.category]) cats[p.category] = [];
@@ -177,6 +241,7 @@ function buildFileTree() {
   });
 
   const catList = [
+    { name: '调研', icon: '📁' },
     { name: '技术笔记', icon: '📁' },
     { name: '工程实践', icon: '📁' },
     { name: '随笔', icon: '📁' }
@@ -197,7 +262,6 @@ function buildFileTree() {
 
   nav.innerHTML = html;
 
-  // category collapse
   nav.querySelectorAll('.tree-cat-label').forEach(lbl => {
     lbl.addEventListener('click', () => {
       lbl.classList.toggle('collapsed');
@@ -206,7 +270,6 @@ function buildFileTree() {
     });
   });
 
-  // post click
   nav.querySelectorAll('.tree-post').forEach(link => {
     link.addEventListener('click', e => {
       e.preventDefault();
@@ -218,7 +281,6 @@ function buildFileTree() {
 }
 
 function showPost(post, treeEl) {
-  // update tree active state
   document.querySelectorAll('.tree-post').forEach(el => el.classList.remove('active'));
   if (treeEl) treeEl.classList.add('active');
 
@@ -238,10 +300,8 @@ function showPost(post, treeEl) {
 
   buildTOC();
   setupScrollSpy();
-
-  // scroll to top of content
   main.scrollTop = 0;
-  window.scrollTo({ top: 56, behavior: 'smooth' });
+  window.scrollTo({ top: 60, behavior: 'smooth' });
 }
 
 function buildTOC() {
@@ -267,7 +327,6 @@ function buildTOC() {
 
   tocNav.innerHTML = html;
 
-  // TOC click
   tocNav.querySelectorAll('.toc-item').forEach(item => {
     item.addEventListener('click', e => {
       e.preventDefault();
@@ -282,7 +341,6 @@ function setupScrollSpy() {
   if (tocItems.length === 0) return;
 
   const headings = document.querySelectorAll('.blog-article-body h2[id], .blog-article-body h3[id]');
-
   const observer = new IntersectionObserver(entries => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
@@ -301,6 +359,8 @@ function setupScrollSpy() {
    ============================================= */
 
 function initMainPage() {
+  renderHomeBlogCards();
+
   // Scroll-triggered fade-in
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
@@ -308,22 +368,23 @@ function initMainPage() {
     });
   }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
 
-  document.querySelectorAll('.section-header, .blog-card, .project-card, .highlight, .contact-link').forEach(el => {
+  document.querySelectorAll('.section-header, .blog-card, .project-card').forEach(el => {
     el.classList.add('fade-in');
     observer.observe(el);
   });
 
-  // Smooth scroll offset for fixed nav (anchor links on index.html)
+  // Smooth scroll for anchor links
   document.querySelectorAll('a[href^="#"]').forEach(anchor => {
     anchor.addEventListener('click', function(e) {
       const href = this.getAttribute('href');
-      if (href === '#') return;
-      const target = document.querySelector(href);
-      if (target) {
+      if (href === '#' || href === '#projects') {
         e.preventDefault();
-        const offset = 72;
-        const pos = target.getBoundingClientRect().top + window.scrollY - offset;
-        window.scrollTo({ top: pos, behavior: 'smooth' });
+        const target = document.querySelector(href);
+        if (target) {
+          const offset = 72;
+          const pos = target.getBoundingClientRect().top + window.scrollY - offset;
+          window.scrollTo({ top: pos, behavior: 'smooth' });
+        }
       }
     });
   });
@@ -334,14 +395,27 @@ function initMainPage() {
    ============================================= */
 
 if (document.querySelector('.blog-page')) {
-  // blog page
   buildFileTree();
-  // auto-open first post
-  if (blogPosts.length > 0) {
+
+  // Check if URL has #post-xxx hash → auto-open that post
+  const hash = window.location.hash;
+  if (hash && hash.startsWith('#post-')) {
+    const id = hash.replace('#post-', '');
+    const post = blogPosts.find(p => p.id === id);
+    if (post) {
+      const el = document.querySelector(`.tree-post[data-id="${id}"]`);
+      showPost(post, el);
+    } else {
+      // fallback to first post
+      if (blogPosts.length > 0) {
+        const firstEl = document.querySelector(`.tree-post[data-id="${blogPosts[0].id}"]`);
+        showPost(blogPosts[0], firstEl);
+      }
+    }
+  } else if (blogPosts.length > 0) {
     const firstEl = document.querySelector(`.tree-post[data-id="${blogPosts[0].id}"]`);
     showPost(blogPosts[0], firstEl);
   }
 } else {
-  // main page
   initMainPage();
 }

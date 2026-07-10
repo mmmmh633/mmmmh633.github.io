@@ -11,12 +11,13 @@
 <!-- 导航 -->
 <nav class="nav">
   <div class="nav-inner">
-    <a href="#" class="logo">mh</a>
+    <a href="#" class="logo">
+      <span class="logo-bracket">{</span>mmmmh633<span class="logo-bracket">}</span>
+    </a>
     <div class="nav-links">
       <a href="blog.html">博客</a>
       <a href="#projects">项目</a>
-      <a href="#about">关于</a>
-      <a href="#contact">联系</a>
+      <a href="https://github.com/mmmmh633" target="_blank">GitHub</a>
     </div>
   </div>
 </nav>
@@ -28,12 +29,12 @@
   <div class="hero-orb orb-2"></div>
   <div class="hero-orb orb-3"></div>
   <div class="hero-content">
-    <div class="hero-tag">探索者</div>
+    <div class="hero-tag">仿真 × AI 探索者</div>
     <h1>在<span class="gradient-text">仿真与AI</span>的交汇处构建</h1>
     <p class="hero-desc">工程计算与机器学习的融合。物理信息神经网络、数字孪生、高性能科学计算。</p>
     <div class="hero-links">
-      <a href="https://github.com/mmmmh633" class="btn-primary" target="_blank">GitHub</a>
-      <a href="blog.html" class="btn-secondary">阅读博客</a>
+      <a href="blog.html" class="btn-primary">阅读博客</a>
+      <a href="#projects" class="btn-secondary">查看项目</a>
     </div>
   </div>
 </section>
@@ -64,53 +65,39 @@
   </div>
 </section>
 
-<!-- 关于 -->
-<section class="section" id="about">
+<!-- 最新文章磁贴 -->
+<section class="section" id="latest">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">背景</span>
-      <h2>关于</h2>
-      <p>站在仿真与AI前沿的工程师。</p>
+      <span class="section-tag">文章</span>
+      <h2>最新博客</h2>
     </div>
-    <div class="about-card">
-      <div class="about-highlights">
-        <div class="highlight">
-          <span class="highlight-label">研究方向</span>
-          <p>物理信息神经网络、降阶模型与数字孪生系统。</p>
-        </div>
-        <div class="highlight">
-          <span class="highlight-label">技术栈</span>
-          <p>Python · PaddlePaddle · PyTorch · ANSYS · ParaView</p>
-        </div>
-        <div class="highlight">
-          <span class="highlight-label">兴趣领域</span>
-          <p>计算力学、代理模型、GPU 加速仿真。</p>
-        </div>
+    <div class="blog-grid" id="homeBlogGrid"></div>
+    <div class="view-more">
+      <a href="blog.html" class="btn-secondary">查看更多 →</a>
+    </div>
+  </div>
+</section>
+
+<!-- 页脚（含关于 + 联系信息） -->
+<footer class="footer-full">
+  <div class="footer-grid">
+    <div class="footer-col">
+      <h4>关于</h4>
+      <p>站在仿真与AI前沿的工程师。研究方向包括物理信息神经网络、降阶模型与数字孪生系统。</p>
+    </div>
+    <div class="footer-col">
+      <h4>技术栈</h4>
+      <p>Python · PaddlePaddle · PyTorch · ANSYS · ParaView</p>
+    </div>
+    <div class="footer-col">
+      <h4>联系</h4>
+      <div class="footer-links">
+        <a href="https://github.com/mmmmh633" target="_blank">GitHub</a>
       </div>
     </div>
   </div>
-</section>
-
-<!-- 联系 -->
-<section class="section section-alt" id="contact">
-  <div class="container">
-    <div class="section-header">
-      <span class="section-tag">联系我</span>
-      <h2>联系</h2>
-      <p>欢迎交流与合作。</p>
-    </div>
-    <div class="contact-links">
-      <a href="https://github.com/mmmmh633" class="contact-link" target="_blank">
-        <span class="contact-icon">⌘</span>
-        <span>GitHub</span>
-      </a>
-    </div>
-  </div>
-</section>
-
-<!-- 页脚 -->
-<footer>
-  <div class="container">
+  <div class="footer-bottom">
     <p>&copy; 2026 mmmmh633</p>
   </div>
 </footer>
