@@ -92,6 +92,16 @@ img { max-width: 100%; display: block; }
 .nav-share:hover { color: var(--accent2); border-color: var(--accent2); }
 .nav-share.copied { color: var(--green); border-color: var(--green); }
 
+/* Nav button (个人简介) */
+.nav-btn {
+  padding: 4px 14px; border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: .88em; font-weight: 500;
+  color: var(--text2) !important;
+  transition: all .2s;
+}
+.nav-btn:hover { color: var(--accent2) !important; border-color: var(--accent2); }
+
 /* ===== Hero ===== */
 .hero {
   position: relative;
