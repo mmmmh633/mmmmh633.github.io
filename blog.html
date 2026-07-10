@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>博客 — mmmmh633</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="blog-page">
+
+<!-- 导航 -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="logo">mh</a>
+    <div class="nav-links">
+      <a href="blog.html" class="active">博客</a>
+      <a href="index.html#projects">项目</a>
+      <a href="index.html#about">关于</a>
+      <a href="index.html#contact">联系</a>
+    </div>
+  </div>
+</nav>
+
+<!-- 博客主体：三栏布局 -->
+<div class="blog-layout">
+  <!-- 左侧文件树 -->
+  <aside class="blog-sidebar" id="fileTree">
+    <div class="sidebar-head">目录</div>
+    <nav class="file-tree" id="fileTreeNav"></nav>
+  </aside>
+
+  <!-- 中间内容区 -->
+  <main class="blog-main" id="blogContent">
+    <div class="blog-welcome">
+      <span class="section-tag">文章</span>
+      <h2>博客</h2>
+      <p>数值仿真、物理信息学习与工程计算的思考。</p>
+    </div>
+  </main>
+
+  <!-- 右侧文章目录 -->
+  <aside class="blog-toc" id="blogToc">
+    <div class="sidebar-head">本页目录</div>
+    <nav class="toc-nav" id="tocNav">
+      <p class="toc-empty">选择文章以查看目录</p>
+    </nav>
+  </aside>
+</div>
+
+<!-- 页脚 -->
+<footer>
+  <div class="container">
+    <p>&copy; 2026 mmmmh633</p>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
