@@ -47,17 +47,54 @@ function buildFileTree() {
       e.preventDefault();
       const id = link.dataset.id;
       const post = blogPosts.find(p => p.id === id);
-      if (post) showPost(post, link);
+      if (post) showArticle(post, id);
     });
   });
 }
 
-function showPost(post, treeEl) {
+function renderAllBlogCards() {
+  const grid = document.getElementById('allBlogGrid');
+  if (!grid) return;
+
+  let html = '';
+  blogPosts.forEach(post => {
+    html += `
+      <div class="blog-card" data-id="${post.id}">
+        <div class="blog-card-meta">
+          <span class="blog-card-date">${post.date}</span>
+          <span class="blog-card-cat">${post.category}</span>
+        </div>
+        <h3>${post.title}</h3>
+        <p>${post.excerpt}</p>
+      </div>`;
+  });
+  grid.innerHTML = html;
+
+  grid.querySelectorAll('.blog-card').forEach(card => {
+    card.addEventListener('click', function() {
+      const id = this.dataset.id;
+      const post = blogPosts.find(p => p.id === id);
+      if (post) {
+        showArticle(post, id);
+        window.history.replaceState(null, '', `#post-${id}`);
+      }
+    });
+  });
+}
+
+function showArticle(post, id) {
+  // highlight tree item
   document.querySelectorAll('.tree-post').forEach(el => el.classList.remove('active'));
+  const treeEl = document.querySelector(`.tree-post[data-id="${id}"]`);
   if (treeEl) treeEl.classList.add('active');
 
-  const main = document.getElementById('blogContent');
-  main.innerHTML = `
+  // switch to article view
+  document.getElementById('blogCardsView').style.display = 'none';
+  document.getElementById('blogArticleView').style.display = 'block';
+  document.getElementById('blogToc').style.display = '';
+
+  const container = document.getElementById('articleContainer');
+  container.innerHTML = `
     <article class="blog-article" id="post-${post.id}">
       <div class="blog-article-header">
         <div class="blog-article-meta">
@@ -72,7 +109,16 @@ function showPost(post, treeEl) {
 
   buildTOC();
   setupScrollSpy();
-  main.scrollTop = 0;
+  window.scrollTo({ top: 60, behavior: 'smooth' });
+}
+
+function showCardsView() {
+  document.getElementById('blogArticleView').style.display = 'none';
+  document.getElementById('blogCardsView').style.display = '';
+  document.getElementById('blogToc').style.display = 'none';
+  document.querySelectorAll('.tree-post').forEach(el => el.classList.remove('active'));
+  document.getElementById('tocNav').innerHTML = '<p class="toc-empty">选择文章以查看目录</p>';
+  window.history.replaceState(null, '', window.location.pathname);
   window.scrollTo({ top: 60, behavior: 'smooth' });
 }
 
@@ -127,13 +173,36 @@ function setupScrollSpy() {
 }
 
 /* =============================================
+   Homepage Blog Cards
+   ============================================= */
+
+function renderHomeBlogCards() {
+  const grid = document.getElementById('homeBlogGrid');
+  if (!grid) return;
+
+  const latest = blogPosts.slice(0, 3);
+  let html = '';
+  latest.forEach(post => {
+    html += `
+      <a href="blog.html#post-${post.id}" class="blog-card" data-id="${post.id}">
+        <div class="blog-card-meta">
+          <span class="blog-card-date">${post.date}</span>
+          <span class="blog-card-cat">${post.category}</span>
+        </div>
+        <h3>${post.title}</h3>
+        <p>${post.excerpt}</p>
+      </a>`;
+  });
+  grid.innerHTML = html;
+}
+
+/* =============================================
    Main Page Functions
    ============================================= */
 
 function initMainPage() {
   renderHomeBlogCards();
 
-  // Scroll-triggered fade-in
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) entry.target.classList.add('visible');
@@ -145,26 +214,20 @@ function initMainPage() {
     observer.observe(el);
   });
 
-  // Smooth scroll for anchor links
   document.querySelectorAll('a[href^="#"]').forEach(anchor => {
     anchor.addEventListener('click', function(e) {
       const href = this.getAttribute('href');
-      if (href === '#' || href === '#projects') {
+      if (href === '#') return;
+      const target = document.querySelector(href);
+      if (target) {
         e.preventDefault();
-        const target = document.querySelector(href);
-        if (target) {
-          const offset = 72;
-          const pos = target.getBoundingClientRect().top + window.scrollY - offset;
-          window.scrollTo({ top: pos, behavior: 'smooth' });
-        }
+        const offset = 72;
+        const pos = target.getBoundingClientRect().top + window.scrollY - offset;
+        window.scrollTo({ top: pos, behavior: 'smooth' });
       }
     });
   });
 }
-
-/* =============================================
-   Init
-   ============================================= */
 
 /* =============================================
    Share Button
@@ -194,28 +257,27 @@ function initShareButton() {
   });
 }
 
+/* =============================================
+   Init
+   ============================================= */
+
 if (document.querySelector('.blog-page')) {
   initShareButton();
   buildFileTree();
+  renderAllBlogCards();
 
-  // Check if URL has #post-xxx hash → auto-open that post
+  // Back to list button
+  document.getElementById('backToList').addEventListener('click', showCardsView);
+
+  // Hide TOC initially (cards view)
+  document.getElementById('blogToc').style.display = 'none';
+
+  // If URL has #post-xxx hash → open that article directly
   const hash = window.location.hash;
   if (hash && hash.startsWith('#post-')) {
     const id = hash.replace('#post-', '');
     const post = blogPosts.find(p => p.id === id);
-    if (post) {
-      const el = document.querySelector(`.tree-post[data-id="${id}"]`);
-      showPost(post, el);
-    } else {
-      // fallback to first post
-      if (blogPosts.length > 0) {
-        const firstEl = document.querySelector(`.tree-post[data-id="${blogPosts[0].id}"]`);
-        showPost(blogPosts[0], firstEl);
-      }
-    }
-  } else if (blogPosts.length > 0) {
-    const firstEl = document.querySelector(`.tree-post[data-id="${blogPosts[0].id}"]`);
-    showPost(blogPosts[0], firstEl);
+    if (post) showArticle(post, id);
   }
 } else {
   initShareButton();
