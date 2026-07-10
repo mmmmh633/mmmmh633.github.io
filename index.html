@@ -1,16 +1,65 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>Github Page demo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" type="text/css" media="screen" href="main.css" />
-    <script src="index.js"></script>
+    <title>王建达 | Personal Page</title>
+    <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <div id="main-content">
+    <header>
+        <div class="container">
+            <h1>王建达</h1>
+            <p class="subtitle">数字孪生方向研发工程师</p>
+        </div>
+    </header>
 
-    </div>
+    <main class="container">
+        <section class="card">
+            <h2>关于我</h2>
+            <p>大连理工大学力学专业 2025 届硕士。目前从事数字孪生与 AI 方向研发工作，主攻瞬态仿真模块，关注物理信息嵌入方法（PINN）。</p>
+        </section>
+
+        <section class="card">
+            <h2>关注方向</h2>
+            <ul class="tags">
+                <li>数字孪生</li>
+                <li>PINN</li>
+                <li>物理仿真</li>
+                <li>PaddleScience</li>
+                <li>GNN</li>
+                <li>深度学习</li>
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2>博客</h2>
+            <div id="blog-posts">
+                <p>博客文章即将发布…</p>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>项目</h2>
+            <ul id="projects">
+                <li><a href="https://github.com/mmmmh633/PaddleScience" target="_blank">PaddleScience</a> — PaddlePaddle 科学计算 SDK</li>
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2>联系</h2>
+            <p>
+                <a href="https://github.com/mmmmh633" target="_blank">GitHub</a>
+            </p>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 王建达</p>
+        </div>
+    </footer>
+
+    <script src="blog.js"></script>
 </body>
 </html>
