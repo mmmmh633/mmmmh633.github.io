@@ -1456,6 +1456,142 @@ print("✓ RO-PINN 示例完成：POD 降阶 + 物理残差约束已集成")</co
 </table>
 
 <div class="tip"><strong>核心原则：SD 1.5 保底，SDXL Lightning 主战，Flux NF4 尝鲜。</strong>你的 3060 Ti 算力不差，败在显存。善用 Lightning/Turbo 蒸馏模型和量化，8GB 也能玩得很舒服。</div>`
+  },
+
+  // ===== 7. Krylov 子空间模型降阶笔记 =====
+  {
+    id: "krylov-mor-notes",
+    title: "Krylov 子空间模型降阶笔记",
+    date: "2026-07-13",
+    category: "技术笔记",
+    excerpt: "一维热传导方程降阶实战：标准 Arnoldi 为何失效、Shift-Invert Arnoldi 如何完美匹配低频模态，含原理剖析与 Python 实现。",
+    content: `<h2>一、问题背景</h2>
+<p>一维热传导方程（有限差分离散）：</p>
+<pre><code>Ṫ = A T + B u</code></pre>
+<ul>
+<li><strong>A = −K</strong>：负定对称矩阵（三对角）</li>
+<li><strong>B</strong>：输入矩阵（右端加热）</li>
+<li>状态维度 <strong>N</strong> 很大（如 N=198），需要降阶</li>
+</ul>
+
+<h2>二、标准 Arnoldi 降阶</h2>
+<h3>Krylov 子空间</h3>
+<pre><code>Kᵣ(A, b) = span{b, Ab, A²b, ..., A^{r−1}b}</code></pre>
+
+<h3>Arnoldi 算法</h3>
+<p>生成 Krylov 子空间的一组标准正交基 Vᵣ，然后投影：</p>
+<pre><code>Aᵣ = Vᵣᵀ A Vᵣ
+Bᵣ = Vᵣᵀ B</code></pre>
+
+<h3>收敛特性</h3>
+<p>Arnoldi 迭代中，A 与 Vᵣ 的矩阵-向量乘 A @ v 会让<strong>模最大的特征值方向</strong>在子空间中占主导。</p>
+
+<table>
+<tr><th>A 的特征值</th><th>模的大小</th><th>Arnoldi 收敛优先级</th></tr>
+<tr><td>−9.87</td><td>9.87</td><td>❌ 最后收敛</td></tr>
+<tr><td>−39.48</td><td>39.48</td><td>❌</td></tr>
+<tr><td>−88.81</td><td>88.81</td><td>❌</td></tr>
+<tr><td>...</td><td>...</td><td>...</td></tr>
+<tr><td>−158394</td><td>158394</td><td>✅ <strong>最先收敛</strong></td></tr>
+</table>
+
+<div class="tip"><strong>结论：</strong>标准 Arnoldi 对负定矩阵会优先捕捉高频（快速衰减）模态，而物理上重要的低频（慢衰减）模态反而丢失。</div>
+
+<h3>错误表现</h3>
+<pre><code>FOM 最大特征值: −9.87  −39.48  −88.81  ...
+ROM 特征值:      −3208  −12573  −27335  ...  ← 完全不匹配！</code></pre>
+<p>中间节点温度误差 = <strong>100%</strong></p>
+
+<h2>三、Shift-Invert Arnoldi（修正方案）</h2>
+<h3>核心思想</h3>
+<p>不对 A 做 Arnoldi，而是对 <strong>A⁻¹</strong> 做 Arnoldi。</p>
+<pre><code>Kᵣ(A⁻¹, b) = span{b, A⁻¹b, A⁻²b, ..., A^{-(r−1)}b}</code></pre>
+
+<table>
+<tr><th>A 的特征值 λ</th><th>A⁻¹ 的特征值 1/λ</th><th>|1/λ|</th><th>Arnoldi 收敛优先级</th></tr>
+<tr><td>−9.87</td><td>−0.101</td><td>0.101</td><td>✅ <strong>最先收敛</strong></td></tr>
+<tr><td>−39.48</td><td>−0.0253</td><td>0.0253</td><td>✅</td></tr>
+<tr><td>−88.81</td><td>−0.0113</td><td>0.0113</td><td>✅</td></tr>
+<tr><td>...</td><td>...</td><td>...</td><td>...</td></tr>
+<tr><td>−158394</td><td>−0.0000063</td><td>0.0000063</td><td>❌ 被忽略</td></tr>
+</table>
+
+<p>A⁻¹ 的模最大特征值正好对应 A 的最接近 0 的特征值（低频模态），完美翻转了收敛顺序。</p>
+
+<h3>算法实现</h3>
+<pre><code>def arnoldi_lti_rom(A, B, r):
+    N = A.shape[0]
+    V = np.zeros((N, r + 1))
+    H = np.zeros((r + 1, r))
+
+    V[:, 0] = B.flatten() / np.linalg.norm(B)
+
+    for j in range(r):
+        # ⚠️ 唯一改动：用 A⁻¹ 代替 A
+        v = np.linalg.solve(A, V[:, j])  # v = A⁻¹ @ V[:,j]
+
+        # 标准 Gram-Schmidt 正交化
+        for i in range(j + 1):
+            H[i, j] = np.dot(V[:, i], v)
+            v = v - H[i, j] * V[:, i]
+
+        H[j + 1, j] = np.linalg.norm(v)
+        if H[j + 1, j] > 1e-12:
+            V[:, j + 1] = v / H[j + 1, j]
+        else:
+            break
+
+    V_r = V[:, :r]
+    # ⚠️ 投影时仍然用原 A，不是 A⁻¹
+    Ar = V_r.T @ A @ V_r
+    Br = V_r.T @ B
+    return Ar, Br, V_r</code></pre>
+
+<h3>常见错误</h3>
+<pre><code># ❌ 错误：对 A⁻¹ 做投影，得到的是 A⁻¹ 的降阶模型
+Ar = V_r.T @ np.linalg.inv(A) @ V_r
+
+# ✅ 正确：基由 A⁻¹ 生成，但投影用原 A
+Ar = V_r.T @ A @ V_r</code></pre>
+
+<h2>四、效果对比</h2>
+<h3>特征值匹配</h3>
+<pre><code>FOM 最大10个特征值:   −9.87  −39.48  −88.81  −157.86  −246.61  ...
+Shift-Invert ROM:     −9.87  −39.48  −88.81  −157.86  −246.61  ...  ✅ 完全匹配</code></pre>
+
+<h3>误差对比</h3>
+<table>
+<tr><th>降阶阶数 r</th><th>标准 Arnoldi</th><th>Shift-Invert Arnoldi</th></tr>
+<tr><td>5</td><td>100%</td><td><strong>0.36%</strong></td></tr>
+<tr><td>10</td><td>100%</td><td><strong>0.039%</strong></td></tr>
+<tr><td>15</td><td>100%</td><td><strong>0.039%</strong></td></tr>
+</table>
+
+<h2>五、算法命名辨析</h2>
+<table>
+<tr><th>名称</th><th>含义</th></tr>
+<tr><td><strong>Arnoldi</strong></td><td>生成 Krylov 子空间正交基的算法（通用流程）</td></tr>
+<tr><td><strong>Shift-Invert</strong></td><td>谱变换技巧，把 A 换成 (A − σI)⁻¹，改变收敛目标</td></tr>
+<tr><td><strong>Krylov 子空间降阶</strong></td><td>用 Krylov 子空间做模型降阶的总称</td></tr>
+<tr><td><strong>Moment Matching</strong></td><td>Krylov 降阶的另一种解释：匹配传递函数的矩</td></tr>
+</table>
+
+<pre><code>标准 Arnoldi:       M = A        →  收敛到 |λ|_max
+Shift-Invert:       M = (A−σI)⁻¹  →  收敛到 λ ≈ σ 附近的特征值
+本例 (σ=0):         M = A⁻¹      →  收敛到 |λ|_min（最接近 0）</code></pre>
+
+<div class="tip">Shift-Invert Arnoldi 仍然是<strong> Arnoldi 算法</strong>，只是换了输入的矩阵。就像煎牛排，5分熟和7分熟都叫煎牛排。</div>
+
+<h2>六、适用场景</h2>
+<table>
+<tr><th>系统类型</th><th>标准 Arnoldi</th><th>Shift-Invert Arnoldi</th></tr>
+<tr><td>稳定系统（特征值全负）</td><td>❌ 收敛到高频</td><td>✅ 收敛到低频</td></tr>
+<tr><td>不稳定系统（有正特征值）</td><td>✅ 收敛到主导模态</td><td>视情况</td></tr>
+<tr><td>结构动力学（M⁻¹K）</td><td>✅ 收敛到高频</td><td>✅ 收敛到低频</td></tr>
+<tr><td>电路仿真（RLC）</td><td>需具体分析</td><td>需具体分析</td></tr>
+</table>
+
+<div class="tip"><strong>经验法则：</strong>对于扩散占优的抛物型系统（热传导、渗流、扩散），<strong>永远用 Shift-Invert</strong>。</div>`
   }
 
 ];
