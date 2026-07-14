@@ -1,6 +1,62 @@
 // Auto-generated blog posts data
 // Generated: 2026-07-10
 const blogPosts = [
+  // ===== 6. PaddleScience PINN 优化分析 =====
+  {
+    id: "paddlescience-pinn-analysis",
+    title: "PaddleScience 的 PINN 实现分析与优化总结",
+    date: "2026-07-14",
+    category: "技术笔记",
+    excerpt: "深入源码分析 PaddleScience 对 PINN 做的架构优化：损失函数设计、因果加权、MTL 多任务聚合、Modified MLP、SPINN、gPINN、XPINN 等 10+ 项优化技巧，附 PyTorch 迁移建议。",
+    content: `<blockquote><p>分析日期：2026-07-14 | 基于 PaddleScience develop 分支源码</p></blockquote>
+<p>完整分析文档（710 行）已托管在仓库中：</p>
+<p><a href="posts/PINN-PaddleScience-analysis.md" target="_blank" class="btn-link">📄 查看完整分析文档</a></p>
+<hr>
+<h2>核心发现速览</h2>
+<h3>损失函数设计</h3>
+<ul>
+<li><strong>MSELoss</strong>：两级权重（逐点 weight_dict + 全局 weight），面积加权（output_dict["area"]），返回 dict 而非标量方便 MTL 聚合</li>
+<li><strong>CausalMSELoss</strong>：实现因果 PINN（Wang et al.），时序因果加权——只有前 k-1 个时间窗损失足够小，第 k 个时间窗才有高权重</li>
+<li><strong>PeriodicMSELoss</strong>：batch 前后半 MSE 计算，强制 u(x_left) == u(x_right)</li>
+<li><strong>MSELossWithL2Decay</strong>：对特定输出 key 施加 L2 正则化</li>
+</ul>
+<h3>网络架构</h3>
+<ul>
+<li><strong>MLP</strong>：支持 tanh/sin/siren/swish/gelu 等激活，WeightNormLinear 权重归一化，Skip Connection，Fourier Feature Embedding（RFF）</li>
+<li><strong>ModifiedMLP</strong>：门控机制（Gate MLP），两路编码器 + 逐元素乘法，更强非线性表达能力</li>
+<li><strong>SPINN</strong>：结构化 PINN，将高维 PDE 分解为子网络乘积</li>
+</ul>
+<h3>训练策略</h3>
+<ul>
+<li><strong>6 种 MTL 聚合器</strong>：Sum、GradNorm、AGDA、PCGrad、NTK、Relobralo</li>
+<li><strong>优化器</strong>：Adam + L-BFGS 两阶段训练，EMA/SWA 模型平均，梯度累计模拟大 batch</li>
+<li><strong>混合精度</strong>：AMP 支持，减少显存</li>
+</ul>
+<h3>特殊优化技巧</h3>
+<ul>
+<li><strong>符号编译</strong>：SymPy 定义 PDE → lambdify 编译为可调用函数，自动推导损失所需的微分项</li>
+<li><strong>gPINN</strong>：梯度增强 PINN——不仅约束函数值，还约束一阶导数</li>
+<li><strong>XPINN</strong>：域分解 PINN——多子域并行训练 + 界面连续性约束</li>
+<li><strong>硬约束</strong>：自动满足边界条件（如 u = x·NN(x) 使 u(0)=0）</li>
+<li><strong>SDF 加权采样</strong>：利用符号距离函数优化采样点分布</li>
+</ul>
+<hr>
+<h2>PyTorch 迁移建议清单</h2>
+<table>
+<tr><th>优先级</th><th>优化项</th><th>迁移难度</th><th>预期收益</th></tr>
+<tr><td><strong>P0</strong></td><td>多级权重 MSELoss</td><td>低</td><td>高</td></tr>
+<tr><td><strong>P0</strong></td><td>ModifiedMLP（门控）</td><td>低</td><td>中</td></tr>
+<tr><td><strong>P0</strong></td><td>Fourier Feature Embedding (RFF)</td><td>低</td><td>高</td></tr>
+<tr><td><strong>P1</strong></td><td>MTL 聚合器（GradNorm/PCGrad）</td><td>中</td><td>高</td></tr>
+<tr><td><strong>P1</strong></td><td>CausalMSELoss</td><td>中</td><td>中</td></tr>
+<tr><td><strong>P1</strong></td><td>L-BFGS 二阶段训练</td><td>低</td><td>中</td></tr>
+<tr><td><strong>P2</strong></td><td>gPINN 梯度增强</td><td>中</td><td>中</td></tr>
+<tr><td><strong>P2</strong></td><td>XPINN 域分解</td><td>高</td><td>视场景</td></tr>
+<tr><td><strong>P2</strong></td><td>SPINN 结构化网络</td><td>高</td><td>视场景</td></tr>
+</table>
+<div class="tip"><strong>建议：</strong>P0 项可立即在 PyTorch 中实现（纯网络结构 + 损失函数修改），P1 项需额外工程但收益明显，P2 项按需选择。</div>
+<p style="margin-top:20px;"><a href="posts/PINN-PaddleScience-analysis.md" target="_blank" class="btn-link">📄 查看完整 710 行分析文档</a></p>`
+  },
 
   // ===== 1. PaddleScience 调研报告 =====
   {
