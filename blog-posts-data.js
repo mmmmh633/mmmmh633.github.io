@@ -8,54 +8,721 @@ const blogPosts = [
     date: "2026-07-14",
     category: "技术笔记",
     excerpt: "深入源码分析 PaddleScience 对 PINN 做的架构优化：损失函数设计、因果加权、MTL 多任务聚合、Modified MLP、SPINN、gPINN、XPINN 等 10+ 项优化技巧，附 PyTorch 迁移建议。",
-    content: `<blockquote><p>分析日期：2026-07-14 | 基于 PaddleScience develop 分支源码</p></blockquote>
-<p>完整分析文档（710 行）已托管在仓库中：</p>
-<p><a href="posts/PINN-PaddleScience-analysis.md" target="_blank" class="btn-link">📄 查看完整分析文档</a></p>
+    content: `<h2>PaddleScience PINN 实现分析与优化总结</h2>
+
+> 基于源码：https://github.com/PaddlePaddle/PaddleScience (develop 分支)
+> 分析日期：2026-07-14
+> 目标：提取可在 PyTorch 中复用的架构设计、优化技巧和最佳实践
+
 <hr>
-<h2>核心发现速览</h2>
-<h3>损失函数设计</h3>
-<ul>
-<li><strong>MSELoss</strong>：两级权重（逐点 weight_dict + 全局 weight），面积加权（output_dict["area"]），返回 dict 而非标量方便 MTL 聚合</li>
-<li><strong>CausalMSELoss</strong>：实现因果 PINN（Wang et al.），时序因果加权——只有前 k-1 个时间窗损失足够小，第 k 个时间窗才有高权重</li>
-<li><strong>PeriodicMSELoss</strong>：batch 前后半 MSE 计算，强制 u(x_left) == u(x_right)</li>
-<li><strong>MSELossWithL2Decay</strong>：对特定输出 key 施加 L2 正则化</li>
-</ul>
-<h3>网络架构</h3>
-<ul>
-<li><strong>MLP</strong>：支持 tanh/sin/siren/swish/gelu 等激活，WeightNormLinear 权重归一化，Skip Connection，Fourier Feature Embedding（RFF）</li>
-<li><strong>ModifiedMLP</strong>：门控机制（Gate MLP），两路编码器 + 逐元素乘法，更强非线性表达能力</li>
-<li><strong>SPINN</strong>：结构化 PINN，将高维 PDE 分解为子网络乘积</li>
-</ul>
-<h3>训练策略</h3>
-<ul>
-<li><strong>6 种 MTL 聚合器</strong>：Sum、GradNorm、AGDA、PCGrad、NTK、Relobralo</li>
-<li><strong>优化器</strong>：Adam + L-BFGS 两阶段训练，EMA/SWA 模型平均，梯度累计模拟大 batch</li>
-<li><strong>混合精度</strong>：AMP 支持，减少显存</li>
-</ul>
-<h3>特殊优化技巧</h3>
-<ul>
-<li><strong>符号编译</strong>：SymPy 定义 PDE → lambdify 编译为可调用函数，自动推导损失所需的微分项</li>
-<li><strong>gPINN</strong>：梯度增强 PINN——不仅约束函数值，还约束一阶导数</li>
-<li><strong>XPINN</strong>：域分解 PINN——多子域并行训练 + 界面连续性约束</li>
-<li><strong>硬约束</strong>：自动满足边界条件（如 u = x·NN(x) 使 u(0)=0）</li>
-<li><strong>SDF 加权采样</strong>：利用符号距离函数优化采样点分布</li>
-</ul>
+
+<h3>目录</h3>
+
+1. <a href="#1-整体架构" target="_blank">整体架构</a>
+2. <a href="#2-损失函数设计" target="_blank">损失函数设计</a>
+3. <a href="#3-网络架构" target="_blank">网络架构</a>
+4. <a href="#4-采样策略" target="_blank">采样策略</a>
+5. <a href="#5-训练策略" target="_blank">训练策略</a>
+6. <a href="#6-特殊优化技巧" target="_blank">特殊优化技巧</a>
+7. <a href="#7-pytorch-迁移建议清单" target="_blank">PyTorch 迁移建议清单</a>
+
 <hr>
-<h2>PyTorch 迁移建议清单</h2>
+
+<h3>1. 整体架构</h3>
+
+PaddleScience 的 PINN 实现遵循"约束（Constraint）+ 方程（PDE）+ 求解器（Solver）"的三层架构：
+
+<pre><code>
+┌─────────────────────────────────────────────────────┐
+│  Solver (ppsci/solver/solver.py)                    │
+│  - 管理训练/评估/导出流程                            │
+│  - 自动将 sympy 表达式转为可调用函数 (lambdify)       │
+│  - 支持混合精度 (AMP)、分布式训练                      │
+│  - 支持 EMA/SWA 模型平均                              │
+│  - 可插拔 MTL loss aggregator                         │
+├─────────────────────────────────────────────────────┤
+│  Constraint (ppsci/constraint/)                     │
+│  - InteriorConstraint: PDE 残差约束                   │
+│  - BoundaryConstraint: 边界条件约束                    │
+│  - InitialConstraint: 初始条件约束                     │
+│  - SupervisedConstraint: 监督数据约束                  │
+│  - PeriodicConstraint: 周期性边界条件                   │
+│  - IntegralConstraint: 积分约束                        │
+├─────────────────────────────────────────────────────┤
+│  PDE Equation (ppsci/equation/pde/)                  │
+│  - 用 sympy 符号化定义 PDE 方程                        │
+│  - 自动编译为 callable 函数                           │
+│  - 支持可学习参数 (learnable_parameters)               │
+│  - 支持 detach_keys 防止梯度回传                       │
+├─────────────────────────────────────────────────────┤
+│  Geometry (ppsci/geometry/)                          │
+│  - Interval/Rectangle/Cuboid/Triangle/Disk/Sphere/..│
+│  - 多种采样: pseudo/Halton/LHS/uniform                │
+│  - SDF (Signed Distance Function) 计算                │
+├─────────────────────────────────────────────────────┤
+│  Loss (ppsci/loss/)                                  │
+│  - MSELoss / CausalMSELoss / PeriodicMSELoss         │
+│  - MSELossWithL2Decay / FunctionalLoss               │
+│  - MTL: Sum / GradNorm / AGDA / PCGrad / NTK / Relobralo │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+
+<strong>关键文件路径</strong>：
+<li><code>ppsci/solver/solver.py</code> — 主求解器</li>
+<li><code>ppsci/solver/train.py</code> — 训练循环</li>
+<li><code>ppsci/constraint/</code> — 约束定义（interior/boundary/initial/supervised）</li>
+<li><code>ppsci/loss/mse.py</code> — 损失函数，含 CausalMSELoss</li>
+<li><code>ppsci/loss/mtl/</code> — 多任务学习损失聚合器</li>
+<li><code>ppsci/equation/pde/base.py</code> — PDE 基类</li>
+<li><code>ppsci/geometry/sampler.py</code> — 采样方法</li>
+
+<hr>
+
+<h3>2. 损失函数设计</h3>
+
+<h4>2.1 基础损失：MSELoss</h4>
+
+位置：<code>ppsci/loss/mse.py</code> — <code>MSELoss</code> 类
+
+核心实现：
+
+<pre><code>
+def forward(self, output_dict, label_dict, weight_dict=None):
+    losses = {}
+    for key in label_dict:
+        loss = F.mse_loss(output_dict[key], label_dict[key], "none")
+        if weight_dict and key in weight_dict:
+            loss *= weight_dict[key]        # 每个 batch 内的逐点加权
+        if "area" in output_dict:
+            loss *= output_dict["area"]     # 面积加权（几何边界）
+        if self.reduction == "sum":
+            loss = loss.sum()
+        elif self.reduction == "mean":
+            loss = loss.mean()
+        if isinstance(self.weight, (float, int)):
+            loss *= self.weight             # 全局 loss 级别权重
+        elif isinstance(self.weight, dict) and key in self.weight:
+            loss *= self.weight[key]        # 每个 output key 独立权重
+        losses[key] = loss
+    return losses
+</code></pre>
+
+<strong>设计要点</strong>：
+1. <strong>逐点加权</strong> (weight_dict) — 每个数据点可配不同权重，例如边界点可加高权重
+2. <strong>面积加权</strong> (output_dict["area"]) — 不规则几何的边界和面积加权
+3. <strong>两级权重</strong> — 全局 weight 和每个 key 的 weight
+4. <strong>返回 dict 而非标量</strong> — 每个 loss 分量独立，以便 MTL Aggregator 合并
+
+<h4>2.2 因果加权损失 (CausalMSELoss)</h4>
+
+位置：<code>ppsci/loss/mse.py</code> — <code>CausalMSELoss</code> 类
+
+实现因果 PINN 的时序因果加权：
+
+<pre><code>
+# 因果加权核心
+loss_t = loss.reshape([self.n_chunks, -1])  # n_chunks x points_per_chunk
+weight_t = paddle.exp(
+    -self.tol * (self.acc_mat @ loss_t.mean(-1, keepdim=True))
+)  # [n_chunks, 1]
+loss = loss_t * weight_t.detach()
+</code></pre>
+
+其中 <code>acc_mat</code> 是下三角矩阵，实现"只有前 k-1 个时间窗的损失很小时，第 k 个时间窗才有高权重"。
+
+<strong>引用</strong>：<a href="https://arxiv.org/abs/2203.07404" target="_blank">Wang et al., "Respecting causality in PINNs"</a>
+
+<h4>2.3 带 L2 正则化的 MSE</h4>
+
+位置：<code>ppsci/loss/mse.py</code> — <code>MSELossWithL2Decay</code> 类
+
+对特定输出 key 施加 L2 正则化，控制网络输出的幅度。
+
+<h4>2.4 周期性边界 MSE (PeriodicMSELoss)</h4>
+
+位置：<code>ppsci/loss/mse.py</code> — <code>PeriodicMSELoss</code> 类
+
+计算 batch 前半和后半的 MSE，用于强制 <code>u(x_left) == u(x_right)</code>。
+
+<h4>2.5 函数式损失 (FunctionalLoss)</h4>
+
+位置：<code>ppsci/loss/func.py</code>
+
+允许用户自定义任意 loss 函数。XPINN 示例用此实现复杂的多子域损失组合：
+<li>源码：<code>examples/xpinn/xpinn.py</code>, <code>loss_fun</code> 函数（含 3 个子域 + 2 个界面）</li>
+
+<h4>2.6 损失权重配置模式</h4>
+
+<strong>示例</strong>：<code>examples/heat_pinn/heat_pinn.py</code>
+<pre><code>
+bc_top = ppsci.constraint.BoundaryConstraint(
+    ..., weight_dict={"u": cfg.TRAIN.weight.bc_top}, ...)
+</code></pre>
+
+每个边界条件独立配置权重，通过 YAML 配置动态调节。
+
+<hr>
+
+<h3>3. 网络架构</h3>
+
+<h4>3.1 MLP 基础网络</h4>
+
+位置：<code>ppsci/arch/mlp.py</code> — <code>MLP</code> 类
+
+<pre><code>
+class MLP(base.Arch):
+    def __init__(self, input_keys, output_keys, num_layers, hidden_size,
+                 activation="tanh", skip_connection=False, weight_norm=False,
+                 periods=None, fourier=None, random_weight=None):
+</code></pre>
+
+<strong>特性</strong>：
+<li><strong>激活函数全面</strong>：tanh、sin、cos、siren、stan（自缩放 tanh）、swish、gelu、relu 等</li>
+<li>位置：<code>ppsci/arch/activation.py</code></li>
+<li><strong>权重归一化</strong> (WeightNormLinear) — 分解为 <code>weight = g * v / ||v||</code>，稳定训练</li>
+<li><strong>随机权重分解</strong> (RandomWeightFactorization) — 可学习参数分解，提升收敛</li>
+<li><strong>Skip Connection</strong> — 偶数层跳跃连接</li>
+<li><strong>Period Embedding</strong> — 周期性输入的 sin/cos 编码</li>
+<li><strong>Fourier Feature Embedding</strong> — 随机傅里叶特征（RFF），提升高频学习能力</li>
+
+<h4>3.2 Modified MLP（改进 MLP）</h4>
+
+位置：<code>ppsci/arch/mlp.py</code> — <code>ModifiedMLP</code> 类
+
+关键改进（参考 SIREN 论文）：
+
+<pre><code>
+# forward_tensor 核心
+u = self.embed_u(x)
+v = self.embed_v(x)
+y = x
+for i, linear in enumerate(self.linears):
+    y = linear(y)
+    y = self.acts[i](y)
+    y = y * u + (1 - y) * v  # 线性插值门控
+</code></pre>
+
+<strong>效果</strong>：通过 <code>y = y * u + (1-y) * v</code> 门控机制缓解梯度路径问题。
+
+<h4>3.3 SPINN（可分离 PINN）</h4>
+
+位置：<code>ppsci/arch/spinn.py</code> — <code>SPINN</code> 类
+
+核心思想：将每个维度用独立的 MLP 编码，然后做张量收缩：
+
+<pre><code>
+# 每个输入维度独立 MLP
+self.branch_nets = nn.LayerList()
+for i in range(input_dim):
+    self.branch_nets.append(ModifiedMLP(input_keys[i], ...))
+
+# 张量收缩（外积风格）
+def forward_tensor(self, *xs):
+    feature_f = [self.branch_nets[i](xs[i]) for i]
+    output = []
+    for key in output_keys:
+        output_i = feature_f[0]  # shape: [B, r]
+        for j in range(1, len(input_keys)):
+            output_i = self._tensor_contraction(output_i, feature_f[j])
+        output_i = output_i.sum(-1, keepdim=True)
+        output.append(output_i)
+    return output
+</code></pre>
+
+<strong>优势</strong>：输入维度解耦，支持任意分辨率网格的推理（输入各维 batch_size 可不同），计算复杂度从 O(N^d) 降到 O(N*d)。
+
+<h4>3.4 PIRBN（物理信息径向基网络）</h4>
+
+位置：<code>jointContribution/PIRBN/pirbn.py</code>
+
+使用 RBN（径向基网络）替代 MLP，并显式计算 NTK（神经正切核）进行自适应权重调整：
+
+<pre><code>
+class PIRBN(paddle.nn.Layer):
+    def cal_ntk(self, x):
+        # 计算域内点和边界点的 NTK 特征值
+        lambda_g, lambda_b, Kg  # 用于自适应加权
+</code></pre>
+
+<h4>3.5 PhyGeoNet（CNN + 几何变换）</h4>
+
+位置：<code>examples/phygeonet/heat_equation.py</code>
+
+使用 USCNN 架构，通过 body-fitted 网格变换将物理域映射到计算域，用 CNN 替代 MLP 加速：
+
+<pre><code>
+# 通过雅可比矩阵将物理坐标变换到计算域
+dvdx = utils.dfdx(output_v, dydeta, dydxi, jinv)
+d2vdx2 = utils.dfdx(dvdx, dydeta, dydxi, jinv)
+</code></pre>
+
+<h4>3.6 输入/输出变换机制</h4>
+
+位置：<code>ppsci/arch/base.py</code>
+
+每个 Arch 基类支持：
+<li><code>register_input_transform(func)</code> — 对输入做预处理（如归一化、特征嵌入）</li>
+<li><code>register_output_transform(func)</code> — 对输出做后处理（如硬约束边界条件）</li>
+
+<strong>gPINN 示例</strong>：<code>examples/gpinn/poisson_1d.py</code>
+<pre><code>
+def output_transform(in_, out):
+    x = in_[invar]  # 输入 x
+    u = out[outvar]  # 网络原始输出
+    return {outvar: x + paddle.tanh(x) * paddle.tanh(np.pi - x) * u}
+</code></pre>
+通过 <code>x + tanh(x)*tanh(π-x)*u</code> 硬编码满足边界条件 <code>u(0)=0, u(π)=π</code>。
+
+<h4>3.7 可学习参数 PDE</h4>
+
+位置：<code>ppsci/equation/pde/base.py</code> — <code>PDE.learnable_parameters</code>
+
+PDE 类可以包含 <code>nn.ParameterList</code> 作为可学习参数，使得方程中的物理参数（如粘度、扩散系数）可被反向传播同时更新。
+
+<hr>
+
+<h3>4. 采样策略</h3>
+
+<h4>4.1 几何采样方法</h4>
+
+位置：<code>ppsci/geometry/sampler.py</code>, <code>ppsci/geometry/geometry.py</code>
+
+支持三种随机采样方法：
+1. <strong><code>"pseudo"</code></strong> — 均匀随机采样（默认）
+2. <strong><code>"Halton"</code></strong> — Halton 序列（低差异序列，更均匀覆盖）
+3. <strong><code>"LHS"</code></strong> — 拉丁超立方采样（Latin Hypercube Sampling）
+
+调用方式：
+<pre><code>
+geom.sample_interior(n, random="LHS", criteria=..., evenly=False)
+geom.sample_boundary(n, random="pseudo", criteria=..., evenly=False)
+</code></pre>
+
+<h4>4.2 <code>evenly=True</code> 均匀采样</h4>
+
+位置：<code>ppsci/geometry/geometry.py</code> — <code>sample_interior</code> 方法
+
+<pre><code>
+if evenly:
+    points = self.uniform_points(n)
+</code></pre>
+
+用于热方程等示例中 PDE 残差点的均匀网格采样：
+<pre><code>
+# examples/heat_pinn/heat_pinn.py
+pde_constraint = ppsci.constraint.InteriorConstraint(
+    ..., evenly=True, name="EQ", ...)
+</code></pre>
+
+<h4>4.3 criteria 筛选</h4>
+
+每个采样接口支持 <code>criteria</code> 函数，用于只保留满足特定条件的点：
+
+<pre><code>
+# 仅保留 y=1 上的边界点
+criteria=lambda x, y: np.isclose(y, 1)
+</code></pre>
+
+底层采用重采样循环（while 循环），直至采满 n 个有效点。
+
+<h4>4.4 Interval/Circle 等几何的均匀点采样</h4>
+
+位置：<code>ppsci/geometry/geometry_1d.py</code>, <code>ppsci/geometry/geometry_2d.py</code>
+
+几何类提供 <code>uniform_points(n, boundary)</code> 方法，在每个维度均匀分布点：
+<li>Interval: <code>np.linspace(self.l, self.r, n)</code></li>
+<li>Rectangle/Cuboid: 各维 linspace 的笛卡尔积</li>
+
+<h4>4.5 SDF 辅助采样</h4>
+
+位置：<code>ppsci/geometry/geometry.py</code> — <code>sample_interior</code> 返回值带 <code>sdf</code> 字段
+
+<pre><code>
+sdf = -self.sdf_func(x)  # 取负使权重为正
+</code></pre>
+
+SDF 值可以用于 loss 加权（边界附近采样点给更高权重），也可计算 SDF 导数做梯度增强。
+
+<h4>4.6 XPINN 的子域采样策略</h4>
+
+位置：<code>examples/xpinn/xpinn.py</code> — <code>train_dataset_transform_func</code>
+
+在每个 epoch 的 DataLoader 中随机从子域和界面重采样：
+<pre><code>
+id_x1 = np.random.choice(_input["residual1_x"].shape[0],
+                         cfg.MODEL.num_residual1_points, replace=False)
+_input["residual1_x"] = _input["residual1_x"][id_x1, :]
+</code></pre>
+每个子域独立配置采样点数，实现域分解采样。
+
+<h4>4.7 SPINN 的每 epoch 重采样</h4>
+
+位置：<code>examples/spinn/helmholtz3d.py</code> — <code>InteriorDataGenerator</code>
+
+<pre><code>
+class InteriorDataGenerator:
+    def __call__(self):
+        self.iter += 1
+        if self.iter % 100 == 0:
+            self._gen()  # 每 100 步重新采样
+        return {...}
+</code></pre>
+支持训练过程中定期重新采样，避免过拟合到特定采样点。
+
+<hr>
+
+<h3>5. 训练策略</h3>
+
+<h4>5.1 优化器支持</h4>
+
+位置：<code>ppsci/optimizer/optimizer.py</code>
+
+完整支持的优化器：
+<li><strong>Adam</strong>（默认首选，含 AMSGrad 变体）</li>
+<li><strong>AdamW</strong>（带解耦权重衰减，支持无权重衰减参数白名单）</li>
+<li><strong>L-BFGS</strong>（带 strong_wolfe 线搜索，常作为 Adam fine-tune 后段）</li>
+<li><strong>SGD</strong>、<strong>Momentum</strong>、<strong>RMSProp</strong></li>
+<li><strong>SOAP</strong>（Shampoo + Adam，二阶优化器）</li>
+<li><strong>OptimizerList</strong> — 多优化器组合（不同参数组用不同优化器）</li>
+
+<strong>Adam + L-BFGS 两阶段训练模式</strong>：
+<li>先 Adam 预训练，再 L-BFGS fine-tune</li>
+<li>Solver 自动检测 LBFGS 优化器并切换到 <code>train_LBFGS_epoch_func</code></li>
+<li>L-BFGS 自动禁用 AMP</li>
+
+<h4>5.2 学习率调度</h4>
+
+位置：<code>ppsci/optimizer/lr_scheduler.py</code>
+
+支持的调度器：
+<li><code>ExponentialDecay</code> — 指数衰减（SPINN 示例使用）</li>
+<li><code>CosineAnnealingDecay</code> — 余弦退火</li>
+<li><code>StepDecay</code> — 阶梯衰减</li>
+<li><code>ReduceOnPlateau</code> — 根据 loss 自适应</li>
+<li>支持 <code>by_epoch</code> 和 <code>by_step</code> 两种模式</li>
+
+<h4>5.3 梯度累计</h4>
+
+位置：<code>ppsci/solver/solver.py</code> — <code>update_freq</code> 参数
+
+<pre><code>
+if solver.update_freq &gt; 1:
+    total_loss = total_loss / solver.update_freq
+# 每 update_freq 步进行一次 optimizer.step()
+total_loss_scaled.backward()  # 每步都 backward
+if iter_id % solver.update_freq == 0:
+    solver.optimizer.step()    # 累计后更新
+    solver.optimizer.clear_grad()
+</code></pre>
+
+<h4>5.4 混合精度训练 (AMP)</h4>
+
+位置：<code>ppsci/solver/solver.py</code> — <code>use_amp=True</code>, <code>amp_level="O1"</code>
+
+<pre><code>
+self.model, self.optimizer = amp.decorate(self.model, self.optimizer, self.amp_level)
+</code></pre>
+
+限制：AGDA 和 PCGrad 不可用于 AMP。
+
+<h4>5.5 模型平均</h4>
+
+位置：<code>ppsci/utils/ema.py</code>
+
+<li><strong>EMA</strong> (Exponential Moving Average) — 指数移动平均</li>
+<li><strong>SWA</strong> (Stochastic Weight Average) — 随机权重平均</li>
+
+<h4>5.6 梯度裁剪</h4>
+
+全部优化器支持 <code>grad_clip</code> 参数：
+<pre><code>
+nn.ClipGradByNorm(clip_norm=1.0)   # 按范数裁剪
+nn.ClipGradByValue(max=1.0)        # 按值裁剪
+nn.ClipGradByGlobalNorm(1.0)       # 全局范数裁剪
+</code></pre>
+
+<hr>
+
+<h3>6. 特殊优化技巧</h3>
+
+<h4>6.1 多任务学习损失聚合 (MTL Loss Aggregator)</h4>
+
+<strong>这是 PINN 训练中最关键、最实用的优化技巧之一。</strong>
+
+位置：<code>ppsci/loss/mtl/</code>
+
+#### 6.1.1 Sum（默认）— <code>mtl/sum.py</code>
+
+简单求和。相当于传统 PINN 所有 loss 直接加。默认策略。
+
+#### 6.1.2 GradNorm — <code>mtl/grad_norm.py</code>
+
+<strong>核心思想</strong>：根据每个损失的梯度范数动态加权。
+
+<pre><code>
+weight_i = mean_grad_norm / grad_norm_i  # 梯度范数越大的 loss 权重越小
+self.weight[i] = momentum * self.weight[i] + (1 - momentum) * weight_i
+</code></pre>
+
+手动选取公式：
+<pre><code>
+w_i^t = &#92;frac{&#92;overline{||∇_θ L_i^t||_2}}{||∇_θ L_i^t||_2}
+</code></pre>
+<li>使用动量平滑权重更新 (default: 0.9)</li>
+<li>每 update_freq 步更新权重</li>
+
+#### 6.1.3 AGDA（自适应梯度下降算法）— <code>mtl/agda.py</code>
+
+<strong>核心思想</strong>：用梯度冲突检测 + 梯度投影 + 自适应缩放。
+
+适用于双任务（PDE loss + BC loss）场景。
+
+流程：
+1. 计算每个 loss 的梯度
+2. 平滑后的 loss 比值 + 累计比值 → 调整权重缩放因子 ω
+3. 计算 ω_f 和 ω_u 缩放梯度
+4. 梯度投影：如果两个梯度的点积 < 0（冲突），减去冲突分量
+
+引用：<a href="https://pubs.aip.org/aip/pof/article-abstract/35/6/063608/2899773" target="_blank">Adaptive Gradient Descent Algorithm for PINN</a>
+
+#### 6.1.4 PCGrad — <code>mtl/pcgrad.py</code>
+
+<strong>核心思想</strong>：梯度冲突时投影到正交方向（与 AGDA 的梯度投影类似）。
+
+#### 6.1.5 NTK 聚合 - <code>mtl/ntk.py</code>
+
+基于神经正切核（NTK）理论，用 NTK 的特征值作为各 loss 的权重。
+
+#### 6.1.6 Relobralo — <code>mtl/relobralo.py</code>
+
+<strong>核心思想</strong>：ReLoBRaLO (Relative Loss Balancing with Random Lookback) — 基于训练过程中各 loss 下降速率的自适应权重。
+
+<h4>6.2 Sympy → Callable 自动编译</h4>
+
+位置：<code>ppsci/equation/pde/base.py</code>, <code>ppsci/utils/expression.py</code>
+
+<strong>关键设计</strong>：
+
+1. PDE 用 sympy 符号定义：
+<pre><code>
+   class Poisson(base.PDE):
+       def __init__(self, dim):
+           invars = self.create_symbols("x y z")[:dim]
+           p = self.create_function("p", invars)
+           poisson = sum(p.diff(invar, 2) for invar in invars)
+           self.add_equation("poisson", poisson)
+</code></pre>
+
+2. Solver 初始化时自动编译：
+<pre><code>
+   funcs = ppsci.lambdify(exprs, model, fuse_derivative=True)
+</code></pre>
+
+3. Sympy 表达式和 callable 函数可混合使用，统一通过 <code>output_expr</code> 对外暴露
+
+<strong><code>detach_keys</code> 机制</strong>：在 sympy 层面指定哪些子项 <code>detach()</code>，防止不必要的梯度回传：
+<pre><code>
+# 在 NavierStokes 中 detach convection term
+NS(..., detach_keys=("u", "v__y"))
+</code></pre>
+
+<h4>6.3 硬约束边界条件</h4>
+
+不限于 soft loss，支持硬编码边界条件：
+
+<strong>gPINN 示例</strong> (<code>examples/gpinn/poisson_1d.py</code>)：
+<pre><code>
+output_transform = lambda in_, out: {
+    outvar: x + paddle.tanh(x) * paddle.tanh(np.pi - x) * u
+}
+</code></pre>
+
+<strong>PhyGeoNet 示例</strong> (<code>examples/phygeonet/heat_equation.py</code>)：
+<pre><code>
+# 直接修改输出张量的边界值
+output_v[:, 0, -pad_singleside:, ...] = 0  # 上边界
+output_v[:, 0, :pad_singleside, ...] = 1    # 下边界
+</code></pre>
+
+<h4>6.4 梯度增强 gPINN</h4>
+
+位置：<code>examples/gpinn/poisson_1d.py</code>
+
+<pre><code>
+class gPINN1D(ppsci.equation.PDE):
+    def __init__(self, invar, outvar):
+        # 不仅约束 PDE 残差 (-dy_xx - f = 0)
+        self.add_equation("res1", -dy_xx - f)
+        # 还约束梯度 (-dy_xxx - df_x = 0)
+        self.add_equation("res2", -dy_xxx - df_x)
+</code></pre>
+
+在 InteriorConstraint 中同时添加两个方程：
+<pre><code>
+pde_constraint = ppsci.constraint.InteriorConstraint(
+    equation["gPINN"].equations,
+    {"res1": 0, "res2": 0},  # 两个残差别同时优化
+    geom["line"], ...,
+    ppsci.loss.MSELoss("mean", weight={"res2": 0.01}),  # 梯度项权重小
+)
+</code></pre>
+
+梯度增强项的 loss 权重通常设得比主 PDE 残差小（如 0.01），避免梯度主导训练。
+
+<h4>6.5 域分解 XPINN</h4>
+
+位置：<code>examples/xpinn/xpinn.py</code>, <code>examples/xpinn/model.py</code>
+
+<strong>核心架构</strong>：
+<li>每个子域独立 MLP，共享输入但参数独立</li>
+<li>界面一致性损失 (MSE_avg_q)：各子域在界面上的预测值应相等</li>
+<li>界面残差一致性 (MSE_R)：界面两侧 PDE 残差应连续</li>
+<li>每个界面点需要在相邻子域都 forward 一次</li>
+
+关键公式（来自 <code>_xpinn_loss</code>）：
+<pre><code>
+MSE_avg_q = mean(||u_q - u_avg||^2)     # 界面一致性
+MSE_R = mean(||R(u_q) - R(u_neigh)||^2) # PDE 残差连续性
+</code></pre>
+
+<h4>6.6 自适应采样</h4>
+
+SPINN 示例 (<code>examples/spinn/helmholtz3d.py</code>)：
+每 100 步重新采样训练点，避免过拟合：
+<pre><code>
+if self.iter % 100 == 0:
+    self._gen()  # 重新采样 xc, yc, zc
+</code></pre>
+
+XPINN 示例 (<code>examples/xpinn/xpinn.py</code>)：
+每个 epoch 从原始数据集中随机子采样：
+<pre><code>
+id_x1 = np.random.choice(total_points, num_sample, replace=False)
+</code></pre>
+
+<h4>6.7 SDF（符号距离函数）加速</h4>
+
+位置：<code>ppsci/geometry/geometry.py</code> — <code>sample_interior</code>
+
+采样结果自动包含 SDF 值：
+<pre><code>
+{**x_dict, **sdf_dict, **sdf_derives_dict}
+</code></pre>
+<li><code>sdf</code> — 每个点到边界的符号距离（取负后权重为正）</li>
+<li><code>sdf__x</code>, <code>sdf__y</code> — SDF 相对输入的导数（可选）</li>
+
+<strong>作用</strong>：SDF 值可直接作为自适应权重，使接近边界的内部点获得更高权重。
+
+<h4>6.8 Jacobian 计算缓存</h4>
+
+位置：<code>ppsci/autodiff/ad.py</code>
+
+<pre><code>
+class _Jacobian:
+    def __call__(self, i, j=None, ...):
+        if i not in self.J:         # 缓存 J[i]
+            self.J[i] = paddle.grad(y_i, xs, ...)
+        return self.J[i]            # 复用缓存
+</code></pre>
+
+<code>Jacobians</code> 类管理多级导数缓存。<code>clear()</code> 函数在每步 forward 后清空缓存，释放计算图。
+
+<h4>6.9 显式梯度图形模式</h4>
+
+位置：<code>examples/xpinn/xpinn.py</code>
+
+<pre><code>
+# 启用 PIR 原语以支持高阶导数
+paddle.framework.core.set_prim_eager_enabled(True)
+</code></pre>
+
+使用底层高阶导数 API 避免嵌套 <code>paddle.grad</code> 的计算图开销。
+
+<hr>
+
+<h3>7. PyTorch 迁移建议清单</h3>
+
+按优先级排序（P0 = 必须搬运，P1 = 强烈建议，P2 = 锦上添花）：
+
+<h4>P0（必须复现的基础架构）</h4>
+
 <table>
-<tr><th>优先级</th><th>优化项</th><th>迁移难度</th><th>预期收益</th></tr>
-<tr><td><strong>P0</strong></td><td>多级权重 MSELoss</td><td>低</td><td>高</td></tr>
-<tr><td><strong>P0</strong></td><td>ModifiedMLP（门控）</td><td>低</td><td>中</td></tr>
-<tr><td><strong>P0</strong></td><td>Fourier Feature Embedding (RFF)</td><td>低</td><td>高</td></tr>
-<tr><td><strong>P1</strong></td><td>MTL 聚合器（GradNorm/PCGrad）</td><td>中</td><td>高</td></tr>
-<tr><td><strong>P1</strong></td><td>CausalMSELoss</td><td>中</td><td>中</td></tr>
-<tr><td><strong>P1</strong></td><td>L-BFGS 二阶段训练</td><td>低</td><td>中</td></tr>
-<tr><td><strong>P2</strong></td><td>gPINN 梯度增强</td><td>中</td><td>中</td></tr>
-<tr><td><strong>P2</strong></td><td>XPINN 域分解</td><td>高</td><td>视场景</td></tr>
-<tr><td><strong>P2</strong></td><td>SPINN 结构化网络</td><td>高</td><td>视场景</td></tr>
+<tr><th>编号</th><th>优化项</th><th>对应源码文件</th><th>PyTorch 可行性</th></tr>
+<tr><td>1</td><td>**Constraint 模式分离** — 将 PDE 残差、边界条件、初始条件、监督数据拆分为独立约束</td><td>&#96;ppsci/constraint/*.py&#96;</td><td>✅ 直接搬，&#96;torch.utils.data.DataLoader&#96; 即可</td></tr>
+<tr><td>2</td><td>**Sympy 符号化 PDE 定义** — 用 sympy 定义方程，自动解析求导</td><td>&#96;ppsci/equation/pde/base.py&#96;</td><td>✅ &#96;sympy&#96; 是跨框架的</td></tr>
+<tr><td>3</td><td>**自动微分类** — Jacobian 计算 + 缓存 + 多阶导数</td><td>&#96;ppsci/autodiff/ad.py&#96;</td><td>✅ 对应 &#96;torch.autograd.grad&#96;</td></tr>
+<tr><td>4</td><td>**几何采样** — Interval/Rectangle/Cuboid + pseudo/Halton/LHS</td><td>&#96;ppsci/geometry/*.py&#96;</td><td>✅ &#96;scipy.stats.qmc.Halton&#96;/&#96;LatinHypercube&#96;</td></tr>
+<tr><td>5</td><td>**输入输出变换机制** — register_input_transform / register_output_transform</td><td>&#96;ppsci/arch/base.py&#96;</td><td>✅ 纯 Python 函数包装</td></tr>
+<tr><td>6</td><td>**L-BFGS + Adam 两阶段训练**</td><td>&#96;ppsci/optimizer/optimizer.py&#96;, &#96;ppsci/solver/train.py&#96;</td><td>✅ &#96;torch.optim.LBFGS&#96; 已完成</td></tr>
 </table>
-<div class="tip"><strong>建议：</strong>P0 项可立即在 PyTorch 中实现（纯网络结构 + 损失函数修改），P1 项需额外工程但收益明显，P2 项按需选择。</div>
-<p style="margin-top:20px;"><a href="posts/PINN-PaddleScience-analysis.md" target="_blank" class="btn-link">📄 查看完整 710 行分析文档</a></p>`
+
+<h4>P1（强烈建议）</h4>
+
+<table>
+<tr><th>编号</th><th>优化项</th><th>对应源码文件</th><th>PyTorch 可行性</th></tr>
+<tr><td>7</td><td>**GradNorm MTL 损失聚合**</td><td>&#96;ppsci/loss/mtl/grad_norm.py&#96;</td><td>✅ 直接搬，只需把 &#96;paddle.grad&#96; → &#96;torch.autograd.grad&#96;</td></tr>
+<tr><td>8</td><td>**CausalMSELoss** — 时序因果加权</td><td>&#96;ppsci/loss/mse.py&#96;</td><td>✅ 纯数学运算</td></tr>
+<tr><td>9</td><td>**ModifiedMLP（门控 MLP）**</td><td>&#96;ppsci/arch/mlp.py&#96;</td><td>✅ 纯 PyTorch nn.Module</td></tr>
+<tr><td>10</td><td>**权重归一化 (WeightNorm)**</td><td>&#96;ppsci/arch/mlp.py&#96;</td><td>✅ &#96;torch.nn.utils.weight_norm&#96;</td></tr>
+<tr><td>11</td><td>**硬约束边界条件** — output_transform</td><td>&#96;examples/gpinn/poisson_1d.py&#96;</td><td>✅ 任意神经网络 forward hook</td></tr>
+<tr><td>12</td><td>**detach_keys 机制** — 符号化 detach 子表达式</td><td>&#96;ppsci/equation/pde/base.py&#96;</td><td>✅ Sympy 层面处理后在代码中调用 &#96;.detach()&#96;</td></tr>
+<tr><td>13</td><td>**逐点加权 loss** — weight_dict 机制</td><td>&#96;ppsci/loss/mse.py&#96;</td><td>✅ 直接搬</td></tr>
+<tr><td>14</td><td>**每步重采样** — epoch 内定期更新采样点</td><td>&#96;examples/spinn/helmholtz3d.py&#96;</td><td>✅ 自定义 Dataset</td></tr>
+</table>
+
+<h4>P2（锦上添花，按需添加）</h4>
+
+<table>
+<tr><th>编号</th><th>优化项</th><th>对应源码文件</th><th>PyTorch 可行性</th></tr>
+<tr><td>15</td><td>**SPINN 可分离网络**</td><td>&#96;ppsci/arch/spinn.py&#96;</td><td>✅ 跨框架思路，实现独立</td></tr>
+<tr><td>16</td><td>**AGDA 自适应梯度**</td><td>&#96;ppsci/loss/mtl/agda.py&#96;</td><td>⚠️ 需要梯度投影，API 不同但可实现</td></tr>
+<tr><td>17</td><td>**PCGrad 梯度投射**</td><td>&#96;ppsci/loss/mtl/pcgrad.py&#96;</td><td>⚠️ 同上</td></tr>
+<tr><td>18</td><td>**Fourier Feature Embedding（RFF）**</td><td>&#96;ppsci/arch/mlp.py&#96;</td><td>✅ &#96;torch.nn.Linear&#96; + 固定随机种子</td></tr>
+<tr><td>19</td><td>**Period Embedding**</td><td>&#96;ppsci/arch/mlp.py&#96;</td><td>✅ 直接搬</td></tr>
+<tr><td>20</td><td>**Siren 初始化 + sin 激活**</td><td>&#96;ppsci/arch/activation.py&#96;</td><td>✅ SIREN 方法</td></tr>
+<tr><td>21</td><td>**Stan 激活（自缩放 tanh）**</td><td>&#96;ppsci/arch/activation.py&#96;</td><td>✅ &#96;tanh(x)*(1+beta*x)&#96;</td></tr>
+<tr><td>22</td><td>**NTK 自适应权重**</td><td>&#96;ppsci/loss/mtl/ntk.py&#96;</td><td>⚠️ 计算开销大，小模型可</td></tr>
+<tr><td>23</td><td>**Relobralo 自适应权重**</td><td>&#96;ppsci/loss/mtl/relobralo.py&#96;</td><td>✅ 纯数学运算</td></tr>
+<tr><td>24</td><td>**EMA/SWA 模型平均**</td><td>&#96;ppsci/utils/ema.py&#96;</td><td>✅ &#96;torch.optim.swa_utils&#96;</td></tr>
+<tr><td>25</td><td>**梯度裁剪**</td><td>&#96;ppsci/optimizer/optimizer.py&#96;</td><td>✅ &#96;torch.nn.utils.clip_grad_norm_&#96;</td></tr>
+<tr><td>26</td><td>**混合精度 (AMP)**</td><td>&#96;ppsci/solver/solver.py&#96;</td><td>✅ &#96;torch.cuda.amp&#96;</td></tr>
+<tr><td>27</td><td>**梯度累计**</td><td>&#96;ppsci/solver/train.py&#96;</td><td>✅ 手动实现 &#96;loss/update_freq&#96;</td></tr>
+</table>
+
+<h4>关键 PyTorch API 映射表</h4>
+
+<table>
+<tr><th>Paddle API</th><th>PyTorch API</th><th>说明</th></tr>
+<tr><td>&#96;paddle.grad&#96;</td><td>&#96;torch.autograd.grad&#96;</td><td>自动求导</td></tr>
+<tr><td>&#96;paddle.nn.Layer&#96;</td><td>&#96;torch.nn.Module&#96;</td><td>基类</td></tr>
+<tr><td>&#96;paddle.nn.Linear&#96;</td><td>&#96;torch.nn.Linear&#96;</td><td>线性层</td></tr>
+<tr><td>&#96;paddle.nn.functional.mse_loss&#96;</td><td>&#96;torch.nn.functional.mse_loss&#96;</td><td>MSE 损失</td></tr>
+<tr><td>&#96;paddle.nn.LayerList&#96;</td><td>&#96;torch.nn.ModuleList&#96;</td><td>模块列表</td></tr>
+<tr><td>&#96;self.create_parameter&#96;</td><td>&#96;torch.nn.Parameter&#96;</td><td>可学习参数</td></tr>
+<tr><td>&#96;self.register_buffer&#96;</td><td>&#96;self.register_buffer&#96;</td><td>缓冲张量</td></tr>
+<tr><td>&#96;paddle.linalg.norm&#96;</td><td>&#96;torch.linalg.norm&#96;</td><td>向量/矩阵范数</td></tr>
+<tr><td>&#96;paddle.concat&#96;</td><td>&#96;torch.cat&#96;</td><td>拼接</td></tr>
+<tr><td>&#96;paddle.exp&#96;</td><td>&#96;torch.exp&#96;</td><td>指数运算</td></tr>
+<tr><td>&#96;paddle.tril&#96;</td><td>&#96;torch.tril&#96;</td><td>下三角矩阵</td></tr>
+<tr><td>&#96;set_value&#96;</td><td>&#96;.data.copy_&#96;</td><td>原地赋值</td></tr>
+<tr><td>&#96;global_step&#96;</td><td>自增计数器</td><td>训练步数</td></tr>
+</table>
+
+<hr>
+
+<h3>总结</h3>
+
+PaddleScience 的 PINN 实现主要有以下突出设计：
+
+1. <strong>约束解耦</strong> — 将不同类型的物理约束（PDE/BC/IC/Data）分别定义为独立模块，通过 Solver 统一管理，天然支持任意组合
+2. <strong>符号微分 + 自动编译</strong> — 用 sympy 定义 PDE 后自动编译为 callable，用户无需手写导数计算
+3. <strong>MTL 损失聚合</strong> — GradNorm/AGDA/PCGrad/Relobralo/NTK 等动态权重策略解决了 PINN 的梯度不平衡问题
+4. <strong>网络灵活</strong> — MLP/ModifiedMLP/SPINN/CNN/KAN 多种架构，支持 weight norm、skip connection、period embedding 等增强技巧
+5. <strong>采样多样化</strong> — LHS/Halton/均匀/SDF 加权，支持周期性重采样和自适应采样
+6. <strong>因果损失</strong> — 显式实现 Causality 加权损失，解决时间相关 PDE 的演进顺序问题
+
+这些设计绝大部分可以直接迁移到 PyTorch，仅需将 Paddle API 替换为对应的 PyTorch API。
+`
   },
 
   // ===== 1. PaddleScience 调研报告 =====
